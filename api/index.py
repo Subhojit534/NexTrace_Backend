@@ -452,15 +452,6 @@ def chat_agent(
         falkor_ssl=falkor.ssl if falkor.ssl is not None else ((x_falkordb_ssl.lower() == "true") if x_falkordb_ssl else False),
     )
 
-    # Ingest custom topology if provided
-    if req.raw_graph:
-        nodes, rels = normalize_graph_json(req.raw_graph)
-        client.seed_database(custom_nodes=nodes, custom_relationships=rels, force=True)
-    elif req.nodes is not None and req.relationships is not None:
-        client.seed_database(custom_nodes=req.nodes, custom_relationships=req.relationships, force=True)
-    elif req.preset_id and req.preset_id != client._active_preset:
-        client.seed_database(preset_name=req.preset_id, force=True)
-
     groq_key = req.groq_api_key or x_groq_api_key or os.getenv("GROQ_API_KEY", "")
     gemini_key = req.gemini_api_key or x_gemini_api_key or os.getenv("GEMINI_API_KEY", "")
     openai_key = req.openai_api_key or x_openai_api_key or os.getenv("OPENAI_API_KEY", "")
@@ -477,12 +468,86 @@ def chat_agent(
     user_msg = req.message.strip()
     msg_lower = user_msg.lower()
 
-    # Detect if the user wants an incident investigation or blast radius simulation
-    is_simulation = any(trigger in msg_lower for trigger in [
-        "simulate", "investigate", "cve", "rce", "compromise", "attack",
-        "blast radius", "shortest path", "sever", "quarantine", "contain",
-        "breach", "zero-day", "exploit", "path to crown jewel"
-    ]) or bool(req.target_service or req.cve_id)
+    import re
+    # 1. Detect casual greetings (strictly lone greetings like 'hi', 'hello', 'hey', 'good morning')
+    is_greeting = bool(re.search(r"^(hi|hello|hey|howdy|greetings|good\s+(morning|afternoon|evening|day)|sup|yo)[\s!.,?]*$", msg_lower))
+
+    # 2. Detect capability / introductory questions
+    is_capability_query = any(p in msg_lower for p in [
+        "who are you", "what are you", "what can you do", "help me", "how do you work", "tell me about yourself", "what do you do", "capabilities"
+    ]) and not any(k in msg_lower for k in ["simulate", "cve", "rce", "shortest path", "blast radius", "sever", "quarantine", "attack"])
+
+    # 3. Detect if the user wants an incident investigation or blast radius simulation (actual work)
+    is_simulation = not is_greeting and not is_capability_query and (
+        any(trigger in msg_lower for trigger in [
+            "simulate", "investigate", "cve", "rce", "compromise", "attack",
+            "blast radius", "shortest path", "sever", "quarantine", "contain",
+            "breach", "zero-day", "exploit", "path to crown jewel", "isolate"
+        ]) or bool(req.target_service or req.cve_id)
+    )
+
+    # Ingest custom topology or re-seed preset if requested
+    if req.raw_graph:
+        nodes, rels = normalize_graph_json(req.raw_graph)
+        client.seed_database(custom_nodes=nodes, custom_relationships=rels, force=True)
+    elif req.nodes is not None and req.relationships is not None:
+        client.seed_database(custom_nodes=req.nodes, custom_relationships=req.relationships, force=True)
+    elif req.preset_id:
+        if is_simulation or req.preset_id != client._active_preset:
+            client.seed_database(preset_name=req.preset_id, force=True)
+
+    # Handle greetings cleanly without dumping tables
+    if is_greeting:
+        return {
+            "reply": """Hello! 👋 I'm **NexTrace**, your autonomous Cloud Security & Attack-Graph Investigator.
+
+I can help you model and investigate your cloud infrastructure:
+- **Import Architecture:** Click the **`+`** button below to upload any cloud topology JSON.
+- **Simulate Zero-Days:** Test CVE exploits (like RCEs or deserialization) against workloads.
+- **Trace Attack Trajectories:** Calculate the `shortestPath()` from perimeter ingress to database crown jewels.
+- **Autonomous Containment:** Compute multi-hop blast radiuses, quarantine compromised services, and sever malicious edges.
+
+How can I help you today?""",
+            "is_investigation": False,
+            "nodes_count": len(client._memory_graph.nodes),
+            "relationships_count": len(client._memory_graph.edges),
+            "entrypoints": [n for n, d in client._memory_graph.nodes(data=True) if d.get("public_facing")],
+            "crown_jewels": [n for n, d in client._memory_graph.nodes(data=True) if d.get("crown_jewel")],
+            "suggested_followups": [
+                "Simulate CVE-2024-3094 RCE on Ingress",
+                "Find shortest path to crown jewel database",
+                "Calculate multi-hop blast radius",
+                "What can you do?"
+            ],
+            "model_used": req.model or "llama-3.3-70b-versatile"
+        }
+
+    # Handle capability overview cleanly without overwhelming tables
+    if is_capability_query:
+        return {
+            "reply": """I am **NexTrace**, an autonomous SecOps investigator that operates on connected attack graphs using **FalkorDB** and multi-hop Cypher queries.
+
+### 🛡️ What I Can Do:
+1. **Perimeter Exposure Mapping:** Identify public ingress points and map attack trajectories through internal microservices and IAM roles.
+2. **Multi-Hop Blast Radius:** Calculate 1-to-4 hop downstream impact to uncover everything an attacker could compromise from a breached workload.
+3. **Attack Path Tracing:** Using FalkorDB's native `shortestPath()` algorithm, mathematically prove whether an adversary can reach high-value database crown jewels.
+4. **Autonomous Breach Containment:** Actively mutate graph state—marking services as `QUARANTINED` and severing compromised communication edges (`[:CALLS]`, `[:CAN_ASSUME]`).
+5. **Mathematical Verification:** Re-verify that 0 surviving attack paths reach your crown jewel stores.
+
+To begin, you can upload a cloud architecture JSON via **`+`** or ask me to simulate a specific threat scenario!""",
+            "is_investigation": False,
+            "nodes_count": len(client._memory_graph.nodes),
+            "relationships_count": len(client._memory_graph.edges),
+            "entrypoints": [n for n, d in client._memory_graph.nodes(data=True) if d.get("public_facing")],
+            "crown_jewels": [n for n, d in client._memory_graph.nodes(data=True) if d.get("crown_jewel")],
+            "suggested_followups": [
+                "Simulate CVE-2024-3094 RCE on Ingress",
+                "Find shortest path to crown jewel database",
+                "Identify blast radius of OrderService",
+                "Sever compromised edges to contain breach"
+            ],
+            "model_used": req.model or "llama-3.3-70b-versatile"
+        }
 
     if is_simulation:
         # Determine target service and CVE
@@ -650,22 +715,23 @@ I have executed an autonomous investigation and blast-radius containment over th
     # If an AI provider (Groq, Gemini, or OpenAI) is configured, invoke it for conversational reasoning
     ai_answer = None
     if investigator.groq_client or investigator.gemini_client or investigator.openai_client:
-        sample_nodes = list(client._memory_graph.nodes)[:30]
-        sample_edges = [f"{u}->{v}" for u, v in list(client._memory_graph.edges)[:25]]
         history_context = "\n".join(f"{m.role.capitalize()}: {m.content}" for m in (req.history or [])[-4:])
-        ai_prompt = f"""Active Attack Graph Workspace:
+        ai_prompt = f"""You are NexTrace, an intelligent SecOps AI assistant (Google Gemini style).
+The user is asking a conversational or technical security question: "{user_msg}"
+
+Context:
 - Active Universe Preset: {client._active_preset}
-- Total Workload Nodes ({nodes_count}): {', '.join(sample_nodes)}
-- Ingress Entrypoints: {', '.join(entrypoints) if entrypoints else 'None'}
-- Crown Jewel Stores: {', '.join(crown_jewels) if crown_jewels else 'None'}
-- Key Relationships: {', '.join(sample_edges)}
+- Ingress Points: {', '.join(entrypoints[:5]) if entrypoints else 'None'}
+- Crown Jewels: {', '.join(crown_jewels[:5]) if crown_jewels else 'None'}
 
 Recent Chat History:
 {history_context if history_context else 'None'}
 
-User Prompt: {user_msg}
-
-Please answer the user's prompt as an expert SecOps AI Agent (Google Gemini style) in concise markdown, referencing the active graph architecture, services, databases, or threat simulation vectors.
+Instructions:
+- Answer naturally, helpfully, and concisely (1-2 short paragraphs or clean bullet points).
+- Explain concepts with clear, practical examples.
+- DO NOT dump long tables of nodes, services, or IAM roles unless the user explicitly asks to list them.
+- Keep the tone professional, friendly, and conversational.
 """
         ai_answer = investigator.generate_ai_response(ai_prompt)
 
@@ -717,21 +783,15 @@ The active topology has **{len(entrypoints)} public gateway(s)**:
 Simulate a remote code execution exploit on any of these gateways to evaluate lateral movement into internal services.
 """
         else:
-            reply_markdown = f"""### NexTrace Graph Universe State
+            reply_markdown = f"""### NexTrace Autonomous SecOps
 
-Here is the current topology overview in the active **FalkorDB** workspace:
+I'm ready to investigate your cloud infrastructure.
 
-- **Active Preset / Graph:** `{client._active_preset}`
-- **Total Nodes:** `{nodes_count}`
-- **Total Relationships:** `{rels_count}`
-- **Public Ingress Gateways ({len(entrypoints)}):** {", ".join(f"`{e}`" for e in entrypoints) if entrypoints else "None defined"}
-- **Protected Crown Jewels ({len(crown_jewels)}):** {", ".join(f"`{c}`" for c in crown_jewels) if crown_jewels else "None defined"}
+- **Active Universe:** `{client._active_preset}` ({nodes_count} nodes, {rels_count} relationships)
+- **Ingress Gateways:** {", ".join(f"`{e}`" for e in entrypoints) if entrypoints else "None defined"}
+- **Protected Crown Jewels:** {", ".join(f"`{c}`" for c in crown_jewels) if crown_jewels else "None defined"}
 
-#### Recommended Actions:
-1. Click any suggested prompt below to simulate a real-world zero-day attack.
-2. Click the **'+' button** in the prompt bar to upload or import any custom JSON architecture.
-3. Open **Settings** (top right) to configure your own Groq, Gemini, or FalkorDB cluster credentials.
-"""
+You can click any suggested scenario below, or upload your own cloud architecture JSON using the **`+`** button to begin."""
 
     return {
         "reply": reply_markdown,
