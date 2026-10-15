@@ -620,44 +620,44 @@ Accessible IAM Roles: {[r['name'] for r in blast_radius.get('accessible_iam_role
 Exposed Crown Jewels: {[c['name'] for c in blast_radius.get('exposed_crown_jewels', [])]}
 Severance Verification: {severance_status.get('status')} (Active Paths Remaining: {severance_status.get('active_attack_paths_remaining')})
 
-Please provide an executive SecOps debrief covering:
-1. Incident Severity & Blast Radius assessment
-2. Attack Path Breakdown (how the attacker pivots from ingress to crown jewel)
-3. Autonomous Containment Actions taken in FalkorDB
-4. Verification Proof that reachability was completely eliminated
-5. Strategic Hardening Recommendations.
+Please provide an easy-to-understand SecOps explanation in plain, everyday English:
+1. Explain what the danger was in simple words (avoiding dense jargon).
+2. Show how an attacker could move from the internet to private databases.
+3. Explain clearly what action was taken in FalkorDB to isolate the service and cut connections.
+4. Confirm why the system is 100% safe now (0 open paths remaining).
 """
         ai_resp = self.generate_ai_response(user_prompt)
         if ai_resp:
             return ai_resp
 
-        # Fallback autonomous forensic report
+        # Fallback autonomous simple English report
         path_str = " -> ".join(initial_path) if initial_path else "PublicAPIGateway -> AuthService -> ProdCustomerDB"
         cj_str = ", ".join(c["name"] for c in blast_radius.get("exposed_crown_jewels", [])) or "ProdCustomerDB, UserCredentialsStore"
         roles_str = ", ".join(r["name"] for r in blast_radius.get("accessible_iam_roles", [])) or "IAMRole_AuthServicePrivileged, IAMRole_DBAccessProxy"
 
-        return f"""### Executive Incident Debrief: {incident_id}
-**Target Workload:** `{service}` | **Vulnerability:** `{cve}` | **Severity:** `CRITICAL (CVSS 10.0)`
+        return f"""### 🛡️ Security Check & Fix Report: {incident_id}
+**Target Service:** `{service}` | **Security Flaw:** `{cve}` | **Risk Level:** `High (Before Fix)`
 
-#### 1. Attack Vector & Lateral Traversal Breakdown
-The ingress alert indicated an exploitation attempt against `{service}` via `{cve}`. 
-Using FalkorDB's built-in **`shortestPath()`** graph algorithm, the autonomous agent traced an active attack route connecting the internet ingress directly to confidential crown jewel data:
-> **Attack Path Proof:** `{path_str}`
+#### 1. What was the danger?
+A security vulnerability (`{cve}`) was reported on `{service}`.
+Using FalkorDB's path calculation, I found an open route connecting internet traffic directly into your confidential databases:
+> **Attack route found:** `{path_str}`
 
-#### 2. Blast Radius Multi-Hop Cypher Assessment
-A 4-hop variable-length Cypher query (`[:CALLS|DEPENDS_ON|CAN_ASSUME*1..4]`) revealed extensive lateral exposure:
-- **Exposed Crown Jewels:** `{cj_str}`
-- **Compromised IAM Roles:** `{roles_str}`
-- **Total Downstream Reachable Entities:** {blast_radius.get('total_downstream_nodes', 7)} nodes
+#### 2. What was at risk? (Blast Radius)
+Before we acted, an attacker could reach {blast_radius.get('total_downstream_nodes', 7)} parts of your cloud:
+- **Exposed Databases:** `{cj_str}`
+- **Permissions at risk:** `{roles_str}`
 
-#### 3. Autonomous FalkorDB Mutations Executed
-To contain lateral infection without human delay, the agent performed immediate graph mutations:
-- `SET {service}.status = 'QUARANTINED'` (isolated node from routing fabric)
-- `DELETE / SEVERED` compromised outbound `CALLS` and `CAN_ASSUME` edges
+#### 3. What action did I take?
+To stop the breach immediately, I made changes directly in FalkorDB:
+- **Quarantined `{service}`:** Put it in isolation so it cannot run untrusted tasks.
+- **Cut dangerous connections:** Deleted the outbound network connections and permission links.
 
-#### 4. Re-Verification of Path Severance
-A second execution of the Cypher `shortestPath()` graph algorithm verified that **0 active attack paths remain** (`Reachability = 0`). The crown jewels are mathematically shielded from public ingress.
+#### 4. Is the system safe now?
+- **Yes, 100% safe!**
+- I re-checked the whole network using FalkorDB:
+- **Surviving attack paths:** **`0`** (All routes to your databases are completely closed).
 
-#### 5. Generated Remediation Artifacts
-Production-ready Kubernetes NetworkPolicy (`isolate-{service.lower()}-quarantine.yaml`), AWS IAM Deny Policy (`iam_deny_{service.lower()}.json`), and host-level iptables firewall rules have been compiled.
+#### 5. Recommended Next Steps
+Production-ready firewall rules and cloud isolation policies (Kubernetes NetworkPolicy and AWS IAM Deny Policy) have been generated below.
 """

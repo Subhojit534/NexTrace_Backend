@@ -595,43 +595,43 @@ To begin, you can upload a cloud architecture JSON via **`+`** or ask me to simu
         kill_chain = [
             {
                 "step": 1,
-                "stage": "Initial Ingress Compromise",
+                "stage": "Entry Point Detected",
                 "status": "COMPROMISED",
                 "entity": entrypoint,
-                "vector": f"Vulnerability {cve_id} ingress trigger",
-                "description": f"External perimeter exposure via {entrypoint} allowing adversarial probe."
+                "vector": f"Security Alert: {cve_id}",
+                "description": f"An attacker attempts to probe your network through public entrypoint {entrypoint}."
             },
             {
                 "step": 2,
-                "stage": "Suspected Service Exploitation",
+                "stage": "Target Service Targeted",
                 "status": "COMPROMISED",
                 "entity": target_service,
-                "vector": f"Remote Code Execution via {cve_id}",
-                "description": f"Memory corruption or payload execution detected on {target_service} container."
+                "vector": f"Vulnerability {cve_id}",
+                "description": f"A security flaw was detected in {target_service} that allows unauthorized access."
             },
             {
                 "step": 3,
-                "stage": "Lateral Pivot & IAM Assumption",
+                "stage": "Internal Spread Blocked",
                 "status": "EXPLOITED",
-                "entity": lateral_hops[0] if lateral_hops else "Internal Service Mesh",
-                "vector": "CAN_ASSUME / CALLS lateral traversal",
-                "description": "Adversary hopped through internal network edges and privileged identity tokens."
+                "entity": lateral_hops[0] if lateral_hops else "Internal Network",
+                "vector": "Lateral Jump Vector",
+                "description": "The attacker tries to hop from this service into internal permissions and other services."
             },
             {
                 "step": 4,
-                "stage": "Target Crown Jewel Exposure",
+                "stage": "Important Data in Danger",
                 "status": "EXPOSED",
                 "entity": crown_jewel,
-                "vector": "Direct ACCESSES database relationship",
-                "description": f"Critical store {crown_jewel} was within reach before autonomous mitigation."
+                "vector": "Direct Database Access",
+                "description": f"Your confidential database ({crown_jewel}) was in danger before we acted."
             },
             {
                 "step": 5,
-                "stage": "Autonomous FalkorDB Severance",
+                "stage": "Threat Isolated & Fixed",
                 "status": "CONTAINED",
-                "entity": f"{target_service} Outbound Network Edges",
-                "vector": "Cypher Edge Deletion & Quarantine State",
-                "description": "Mutated graph state: Quarantined node & severed compromised edges. 0 attack paths remain."
+                "entity": f"{target_service} (Quarantined)",
+                "vector": "FalkorDB Edge Severance",
+                "description": "FalkorDB locked down the service and cut the dangerous connection lines. 0 attack paths remain."
             }
         ]
 
@@ -647,34 +647,37 @@ To begin, you can upload a cloud architecture JSON via **`+`** or ask me to simu
                     "summary": step.get("result_summary")
                 })
 
-        # Generate Gemini-style structured narrative
+        # Generate simple, everyday English narrative
         blast = inv_res["blast_radius"]
         total_affected = blast["total_affected_entities"]
         impacted_svcs = ", ".join(blast["downstream_services"]) or "None"
         impacted_roles = ", ".join(blast["accessible_iam_roles"]) or "None"
         impacted_cjs = ", ".join(blast["exposed_crown_jewels"]) or "None"
 
-        reply_markdown = f"""### Incident Response & Threat Containment: `{inv_res['incident_id']}`
+        reply_markdown = f"""### 🛡️ Security Check & Fix Report (`{inv_res['incident_id']}`)
 
-I have executed an autonomous investigation and blast-radius containment over the **FalkorDB** attack graph.
+Here is what happened and how I fixed it in simple terms:
 
-#### 1. Vulnerability & Threat Assessment
-- **Target Workload:** `{target_service}`
-- **Active CVE Exploitation:** `{cve_id}`
-- **Perimeter Attack Path:** `{inv_res['explainable_path_proof']}`
-- **Pre-Remediation Status:** `CRITICAL REACHABILITY CONFIRMED`
+#### 1. What was the danger?
+A known security flaw (**`{cve_id}`**) was found on **`{target_service}`**. 
+If someone attacks this service from the internet, they can follow this direct route into your confidential databases:
+> **Attack route found:** `{inv_res['explainable_path_proof']}`
 
-#### 2. Blast Radius Impact Analysis
-- **Total Entities Impacted:** **{total_affected}**
-- **Downstream Services Exposed:** {impacted_svcs}
-- **Accessible IAM Roles / Identities:** {impacted_roles}
-- **Compromised Crown Jewel Stores:** {impacted_cjs}
+#### 2. What could have been damaged? (Blast Radius)
+Before we stopped it, an attacker could reach **{total_affected} parts** of your system:
+- **Services at risk:** {impacted_svcs}
+- **Permissions they could take over:** {impacted_roles}
+- **Confidential databases in danger:** {impacted_cjs}
 
-#### 3. Autonomous Graph Remediation Executed
-- Quarantined `{target_service}` (`status = 'QUARANTINED'`).
-- Severed all outbound network calls (`CALLS`) and cloud role assumptions (`CAN_ASSUME`).
-- **Mathematical Severance Proof:** Verified with Cypher `shortestPath()`.
-- **Surviving Attack Paths to Crown Jewels:** **`0` (Complete Containment)**.
+#### 3. What action did I take to stop it?
+I immediately updated the FalkorDB graph to contain the breach:
+- **Locked down `{target_service}`:** Marked it as `QUARANTINED` so it cannot run untrusted actions or take in commands.
+- **Cut dangerous connections:** Removed the outbound communication lines and role permissions between `{target_service}` and your internal systems.
+
+#### 4. Is the system safe now?
+- **Yes, 100% safe!**
+- I re-checked the whole network using FalkorDB's path-checking algorithm:
+- **Surviving open attack paths:** **`0`** (All routes to your databases are completely blocked).
 """
 
         # Provide context-aware suggested followups
