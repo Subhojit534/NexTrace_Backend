@@ -475,15 +475,26 @@ def chat_agent(
     # 2. Detect capability / introductory questions
     is_capability_query = any(p in msg_lower for p in [
         "who are you", "what are you", "what can you do", "help me", "how do you work", "tell me about yourself", "what do you do", "capabilities"
-    ]) and not any(k in msg_lower for k in ["simulate", "cve", "rce", "shortest path", "blast radius", "sever", "quarantine", "attack"])
+    ]) and not any(k in msg_lower for k in ["simulate", "cve", "rce", "shortest path", "blast radius", "sever", "quarantine", "attack", "check", "checking"])
 
-    # 3. Detect if the user wants an incident investigation or blast radius simulation (actual work)
+    # 3. Detect conversational follow-up triggers (e.g. "Checking", "Do it", "Let's do it", "Yes", "Go ahead", "Run it")
+    action_followup = any(re.search(r"\b" + re.escape(w) + r"\b", msg_lower) for w in [
+        "checking", "check", "do checking", "do it", "let's do it", "lest do it",
+        "do everything", "go ahead", "run", "run it", "proceed", "yes", "sure",
+        "start", "ok", "okay", "execute", "analyze", "test", "inspect"
+    ])
+
+    # Direct simulation triggers in message
+    direct_simulation = any(trigger in msg_lower for trigger in [
+        "simulate", "investigate", "cve", "rce", "compromise", "attack",
+        "blast radius", "shortest path", "sever", "quarantine", "contain",
+        "breach", "zero-day", "exploit", "path to crown jewel", "isolate"
+    ]) or bool(req.target_service or req.cve_id)
+
+    # 4. Multi-turn resolution: if user sends an action follow-up like "Checking", execute the check!
     is_simulation = not is_greeting and not is_capability_query and (
-        any(trigger in msg_lower for trigger in [
-            "simulate", "investigate", "cve", "rce", "compromise", "attack",
-            "blast radius", "shortest path", "sever", "quarantine", "contain",
-            "breach", "zero-day", "exploit", "path to crown jewel", "isolate"
-        ]) or bool(req.target_service or req.cve_id)
+        direct_simulation or
+        (action_followup and len(user_msg.split()) <= 6)
     )
 
     # Ingest custom topology or re-seed preset if requested
@@ -554,29 +565,46 @@ To begin, you can upload a cloud architecture JSON via **`+`** or ask me to simu
         target_service = req.target_service
         cve_id = req.cve_id
 
-        # Auto-extract from graph nodes if not specified
+        # 1. Search for target service in the current user message
         if not target_service:
             for n in client._memory_graph.nodes:
                 if n.lower() in msg_lower and len(n) >= 3:
                     target_service = n
                     break
 
+        # 2. Multi-turn fallback: Search recent conversation history for any service name previously discussed
+        if not target_service and req.history:
+            for hist_msg in reversed(req.history[-4:]):
+                hist_text = hist_msg.content.lower()
+                for n in client._memory_graph.nodes:
+                    if n.lower() in hist_text and len(n) >= 3:
+                        target_service = n
+                        break
+                if target_service:
+                    break
+
+        # 3. Default fallback: Pick public ingress entrypoint or standard core service
         if not target_service:
-            # Fallback to standard core service in current graph
             candidates = [
                 n for n, d in client._memory_graph.nodes(data=True)
-                if not d.get("public_facing") and not d.get("crown_jewel") and d.get("label") == "Service"
+                if d.get("public_facing")
             ]
             if not candidates:
                 candidates = [
                     n for n, d in client._memory_graph.nodes(data=True)
-                    if not d.get("public_facing") and not d.get("crown_jewel")
+                    if not d.get("crown_jewel") and d.get("label") == "Service"
                 ]
             target_service = candidates[0] if candidates else list(client._memory_graph.nodes)[0]
 
+        # 4. Resolve CVE ID from current message or conversation history
         if not cve_id:
             import re
             cve_match = re.search(r"CVE-\d{4}-\d{4,7}", user_msg, re.IGNORECASE)
+            if not cve_match and req.history:
+                for hist_msg in reversed(req.history[-4:]):
+                    cve_match = re.search(r"CVE-\d{4}-\d{4,7}", hist_msg.content, re.IGNORECASE)
+                    if cve_match:
+                        break
             cve_id = cve_match.group(0).upper() if cve_match else "CVE-2024-3094"
 
         inv_res = investigator.run_investigation(
@@ -718,25 +746,28 @@ I immediately updated the FalkorDB graph to contain the breach:
     # If an AI provider (Groq, Gemini, or OpenAI) is configured, invoke it for conversational reasoning
     ai_answer = None
     if investigator.groq_client or investigator.gemini_client or investigator.openai_client:
-        history_context = "\n".join(f"{m.role.capitalize()}: {m.content}" for m in (req.history or [])[-4:])
-        ai_prompt = f"""You are NexTrace, an intelligent SecOps AI assistant (Google Gemini style).
-The user is asking a conversational or technical security question: "{user_msg}"
-
-Context:
-- Active Universe Preset: {client._active_preset}
-- Ingress Points: {', '.join(entrypoints[:5]) if entrypoints else 'None'}
-- Crown Jewels: {', '.join(crown_jewels[:5]) if crown_jewels else 'None'}
-
-Recent Chat History:
-{history_context if history_context else 'None'}
+        system_inst = f"""You are NexTrace, an intelligent SecOps AI assistant (Google Gemini style) operating on an active FalkorDB graph.
+Active Universe Preset: {client._active_preset}
+Ingress Points: {', '.join(entrypoints[:5]) if entrypoints else 'None'}
+Crown Jewels: {', '.join(crown_jewels[:5]) if crown_jewels else 'None'}
 
 Instructions:
 - Answer naturally, helpfully, and concisely (1-2 short paragraphs or clean bullet points).
-- Explain concepts with clear, practical examples.
-- DO NOT dump long tables of nodes, services, or IAM roles unless the user explicitly asks to list them.
+- Understand multi-turn conversational context! When the user refers to previous topics, follow-up questions, or asks for advice, respond with full awareness of earlier messages.
+- Explain concepts with clear, everyday examples in simple English.
+- DO NOT dump long tables of 30+ nodes unless explicitly requested.
 - Keep the tone professional, friendly, and conversational.
 """
-        ai_answer = investigator.generate_ai_response(ai_prompt)
+        convo_messages = []
+        for m in (req.history or [])[-6:]:
+            role = "user" if m.role == "user" else "assistant"
+            convo_messages.append({"role": role, "content": m.content})
+        convo_messages.append({"role": "user", "content": user_msg})
+
+        ai_answer = investigator.generate_ai_response(
+            messages=convo_messages,
+            system_instruction=system_inst
+        )
 
     if ai_answer:
         reply_markdown = ai_answer

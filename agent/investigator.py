@@ -97,16 +97,31 @@ class AutonomousInvestigator:
 
     def generate_ai_response(
         self,
-        prompt: str,
+        prompt: Optional[str] = None,
         system_instruction: Optional[str] = None,
-        model_override: Optional[str] = None
+        model_override: Optional[str] = None,
+        messages: Optional[List[Dict[str, str]]] = None
     ) -> Optional[str]:
         """
-        Executes unified AI text generation across Groq, Gemini, and OpenAI.
+        Executes unified AI text generation across Groq, Gemini, and OpenAI with full multi-turn conversational support.
         Returns generated text or None if provider unavailable or error occurs.
         """
         selected_model = model_override or self.model or "llama-3.3-70b-versatile"
         system_text = system_instruction or SYSTEM_PROMPT
+
+        # Build messages payload
+        if messages:
+            chat_messages = [{"role": "system", "content": system_text}] + [
+                {"role": m.get("role", "user"), "content": m.get("content", "")}
+                for m in messages
+            ]
+            last_prompt = messages[-1].get("content", "") if messages else (prompt or "")
+        else:
+            last_prompt = prompt or ""
+            chat_messages = [
+                {"role": "system", "content": system_text},
+                {"role": "user", "content": last_prompt}
+            ]
 
         # 1. Google Gemini Provider
         if ("gemini" in selected_model.lower() or not self.groq_client) and self.gemini_api_key:
@@ -117,7 +132,16 @@ class AutonomousInvestigator:
                         model_name=g_model_name,
                         system_instruction=system_text
                     )
-                    resp = model.generate_content(prompt)
+                    # For multi-turn, format history or call generate_content
+                    if messages and len(messages) > 1:
+                        history_turns = []
+                        for m in messages[:-1]:
+                            role = "user" if m.get("role") == "user" else "model"
+                            history_turns.append({"role": role, "parts": [m.get("content", "")]})
+                        chat = model.start_chat(history=history_turns)
+                        resp = chat.send_message(last_prompt)
+                    else:
+                        resp = model.generate_content(last_prompt)
                     if resp and resp.text:
                         return resp.text
             except Exception as e:
@@ -128,11 +152,8 @@ class AutonomousInvestigator:
             try:
                 res = self.openai_client.chat.completions.create(
                     model=selected_model,
-                    messages=[
-                        {"role": "system", "content": system_text},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.2,
+                    messages=chat_messages,
+                    temperature=0.3,
                     max_tokens=1500
                 )
                 if res.choices and res.choices[0].message.content:
@@ -146,11 +167,8 @@ class AutonomousInvestigator:
                 groq_model = self.get_active_model()
                 res = self.groq_client.chat.completions.create(
                     model=groq_model,
-                    messages=[
-                        {"role": "system", "content": system_text},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.2,
+                    messages=chat_messages,
+                    temperature=0.3,
                     max_tokens=1500
                 )
                 if res.choices and res.choices[0].message.content:
