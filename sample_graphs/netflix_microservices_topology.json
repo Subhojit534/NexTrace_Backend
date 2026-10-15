@@ -1,0 +1,106 @@
+{
+  "name": "Netflix OSS Microservices Topology",
+  "description": "Realistic enterprise Netflix-stack microservice topology with Zuul edge gateway, billing services, and protected subscriber and payment vaults.",
+  "nodes": [
+    {
+      "name": "Zuul_Edge_Gateway",
+      "label": "Service",
+      "public_facing": true,
+      "tier": "edge",
+      "runtime": "Java 17 / Spring Cloud Zuul"
+    },
+    {
+      "name": "Eureka_Service_Discovery",
+      "label": "Service",
+      "tier": "control-plane",
+      "runtime": "Netflix Eureka 2.0"
+    },
+    {
+      "name": "SubscriberAccountService",
+      "label": "Service",
+      "tier": "application",
+      "runtime": "Spring Boot 3.2"
+    },
+    {
+      "name": "StreamingCatalogEngine",
+      "label": "Service",
+      "tier": "application",
+      "runtime": "Go 1.22 / gRPC"
+    },
+    {
+      "name": "BillingPaymentService",
+      "label": "Service",
+      "tier": "application",
+      "runtime": "Node.js / Express"
+    },
+    {
+      "name": "RecommendationModelWorker",
+      "label": "Service",
+      "tier": "batch",
+      "runtime": "Python 3.11 / PyTorch"
+    },
+    {
+      "name": "IAM_Billing_ServiceRole",
+      "label": "IAMRole",
+      "arn": "arn:aws:iam::123456789012:role/NetflixBillingProcessor",
+      "privilege_level": "CRITICAL"
+    },
+    {
+      "name": "Cassandra_SubscriberVault",
+      "label": "Database",
+      "crown_jewel": true,
+      "storage_engine": "Apache Cassandra 4.1",
+      "criticality": "HIGH"
+    },
+    {
+      "name": "Stripe_Payment_TokenDB",
+      "label": "Database",
+      "crown_jewel": true,
+      "storage_engine": "Amazon DynamoDB (PCI Level 1)",
+      "criticality": "CRITICAL"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Zuul_Edge_Gateway",
+      "target": "SubscriberAccountService",
+      "type": "CALLS",
+      "protocol": "HTTPS/JSON"
+    },
+    {
+      "source": "Zuul_Edge_Gateway",
+      "target": "StreamingCatalogEngine",
+      "type": "CALLS",
+      "protocol": "gRPC"
+    },
+    {
+      "source": "SubscriberAccountService",
+      "target": "BillingPaymentService",
+      "type": "CALLS",
+      "protocol": "mTLS/HTTP2"
+    },
+    {
+      "source": "SubscriberAccountService",
+      "target": "Cassandra_SubscriberVault",
+      "type": "ACCESSES",
+      "port": 9042
+    },
+    {
+      "source": "BillingPaymentService",
+      "target": "IAM_Billing_ServiceRole",
+      "type": "CAN_ASSUME"
+    },
+    {
+      "source": "IAM_Billing_ServiceRole",
+      "target": "Stripe_Payment_TokenDB",
+      "type": "ACCESSES",
+      "permission": "dynamodb:*"
+    },
+    {
+      "source": "StreamingCatalogEngine",
+      "target": "RecommendationModelWorker",
+      "type": "CALLS",
+      "protocol": "gRPC"
+    }
+  ]
+}

@@ -1,0 +1,653 @@
+{
+  "id": "google_online_boutique",
+  "name": "Google Cloud Online Boutique (11-Tier Benchmark)",
+  "description": "Google's 11-tier microservice architecture with Workload Identities, gRPC mesh, and CreditCardVault.",
+  "nodes": [
+    {
+      "label": "Service",
+      "properties": {
+        "name": "frontend",
+        "tier": "Frontend/Edge",
+        "public_facing": true,
+        "status": "HEALTHY",
+        "runtime": "Go",
+        "environment": "GKE-Production",
+        "criticality": "HIGH"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "cartservice",
+        "tier": "Core/Stateful",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "C#/.NET",
+        "environment": "GKE-Production",
+        "criticality": "HIGH"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "productcatalogservice",
+        "tier": "Core",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "Go",
+        "environment": "GKE-Production",
+        "criticality": "MEDIUM"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "currencyservice",
+        "tier": "Supporting",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "Node.js",
+        "environment": "GKE-Production",
+        "criticality": "LOW"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "paymentservice",
+        "tier": "Core/Sensitive",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "Node.js",
+        "environment": "GKE-Production",
+        "criticality": "CRITICAL"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "shippingservice",
+        "tier": "Fulfillment",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "Go",
+        "environment": "GKE-Production",
+        "criticality": "MEDIUM"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "emailservice",
+        "tier": "Notification",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "Python",
+        "environment": "GKE-Production",
+        "criticality": "LOW"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "checkoutservice",
+        "tier": "Core Orchestrator",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "Go",
+        "environment": "GKE-Production",
+        "criticality": "CRITICAL"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "recommendationservice",
+        "tier": "Analytics/ML",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "Python",
+        "environment": "GKE-Production",
+        "criticality": "MEDIUM"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "adservice",
+        "tier": "Marketing",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "Java",
+        "environment": "GKE-Production",
+        "criticality": "LOW"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "redis-cart",
+        "tier": "Data/Cache",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "Redis",
+        "environment": "GKE-Production",
+        "criticality": "HIGH"
+      }
+    },
+    {
+      "label": "Database",
+      "properties": {
+        "name": "CreditCardVault",
+        "crown_jewel": true,
+        "classification": "PCI-DSS Top Secret",
+        "engine": "Google Cloud Spanner",
+        "records_count": "1.2M tokens",
+        "contains_pii": true
+      }
+    },
+    {
+      "label": "Database",
+      "properties": {
+        "name": "CustomerOrderStore",
+        "crown_jewel": true,
+        "classification": "Confidential",
+        "engine": "Cloud Firestore / Bigtable",
+        "records_count": "4.8M orders",
+        "contains_pii": true
+      }
+    },
+    {
+      "label": "Database",
+      "properties": {
+        "name": "SessionStateStore",
+        "crown_jewel": false,
+        "classification": "Internal",
+        "engine": "Memorystore Redis",
+        "records_count": "500K sessions",
+        "contains_pii": false
+      }
+    },
+    {
+      "label": "IAMRole",
+      "properties": {
+        "name": "GCP_SA_Frontend",
+        "arn": "frontend-sa@boutique-prod.iam.gserviceaccount.com",
+        "privilege_level": "RESTRICTED",
+        "max_session_duration": 3600
+      }
+    },
+    {
+      "label": "IAMRole",
+      "properties": {
+        "name": "GCP_SA_CheckoutService",
+        "arn": "checkout-sa@boutique-prod.iam.gserviceaccount.com",
+        "privilege_level": "ELEVATED",
+        "max_session_duration": 7200
+      }
+    },
+    {
+      "label": "IAMRole",
+      "properties": {
+        "name": "GCP_SA_PaymentProcessor",
+        "arn": "payment-sa@boutique-prod.iam.gserviceaccount.com",
+        "privilege_level": "HIGH_PRIVILEGE",
+        "max_session_duration": 3600
+      }
+    },
+    {
+      "label": "IAMRole",
+      "properties": {
+        "name": "GCP_SA_SpannerDBAdmin",
+        "arn": "spanner-admin@boutique-prod.iam.gserviceaccount.com",
+        "privilege_level": "DATABASE_ADMIN",
+        "max_session_duration": 7200
+      }
+    },
+    {
+      "label": "IAMRole",
+      "properties": {
+        "name": "GCP_SA_ClusterAdmin",
+        "arn": "cluster-admin@boutique-prod.iam.gserviceaccount.com",
+        "privilege_level": "ROOT_ADMIN",
+        "max_session_duration": 3600
+      }
+    },
+    {
+      "label": "Library",
+      "properties": {
+        "name": "grpc_go_1_45",
+        "version": "1.45.0",
+        "ecosystem": "Go/gRPC",
+        "license": "Apache-2.0"
+      }
+    },
+    {
+      "label": "Library",
+      "properties": {
+        "name": "express_cart_jwt",
+        "version": "2.1.0",
+        "ecosystem": "npm",
+        "license": "MIT"
+      }
+    },
+    {
+      "label": "Library",
+      "properties": {
+        "name": "redis_py_4_3",
+        "version": "4.3.4",
+        "ecosystem": "PyPI",
+        "license": "MIT"
+      }
+    },
+    {
+      "label": "Vulnerability",
+      "properties": {
+        "name": "CVE-2023-32731_gRPCHttp2",
+        "cve_id": "CVE-2023-32731",
+        "cvss": 9.8,
+        "severity": "CRITICAL",
+        "attack_vector": "NETWORK",
+        "description": "gRPC HTTP/2 stream cancellation vulnerability leading to memory corruption and potential RCE."
+      }
+    },
+    {
+      "label": "Vulnerability",
+      "properties": {
+        "name": "CVE-2023-44487_RapidReset",
+        "cve_id": "CVE-2023-44487",
+        "cvss": 7.5,
+        "severity": "HIGH",
+        "attack_vector": "NETWORK",
+        "description": "HTTP/2 Rapid Reset protocol flaw enabling DDoS resource exhaustion."
+      }
+    },
+    {
+      "label": "Vulnerability",
+      "properties": {
+        "name": "CVE-2022-29217_PyJWTKeyConfusion",
+        "cve_id": "CVE-2022-29217",
+        "cvss": 8.8,
+        "severity": "HIGH",
+        "attack_vector": "NETWORK",
+        "description": "Key confusion vulnerability in JWT parsing allowing auth token forgery and privilege escalation."
+      }
+    },
+    {
+      "label": "Team",
+      "properties": {
+        "name": "CloudSRETeam",
+        "on_call": "gcp-sre",
+        "slack_channel": "#boutique-sre",
+        "lead": "sre-lead@boutique.cloud"
+      }
+    },
+    {
+      "label": "Team",
+      "properties": {
+        "name": "CheckoutCoreTeam",
+        "on_call": "checkout-eng",
+        "slack_channel": "#boutique-checkout",
+        "lead": "checkout-lead@boutique.cloud"
+      }
+    },
+    {
+      "label": "Team",
+      "properties": {
+        "name": "SecOpsTeam",
+        "on_call": "secops-gcp",
+        "slack_channel": "#boutique-secops",
+        "lead": "secops@boutique.cloud"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "from": "frontend",
+      "rel": "CALLS",
+      "to": "checkoutservice",
+      "props": {
+        "protocol": "gRPC",
+        "port": 5050,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "frontend",
+      "rel": "CALLS",
+      "to": "cartservice",
+      "props": {
+        "protocol": "gRPC",
+        "port": 7070,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "frontend",
+      "rel": "CALLS",
+      "to": "productcatalogservice",
+      "props": {
+        "protocol": "gRPC",
+        "port": 3550,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "frontend",
+      "rel": "CALLS",
+      "to": "recommendationservice",
+      "props": {
+        "protocol": "gRPC",
+        "port": 8080,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "frontend",
+      "rel": "CALLS",
+      "to": "adservice",
+      "props": {
+        "protocol": "gRPC",
+        "port": 9555,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "frontend",
+      "rel": "CALLS",
+      "to": "currencyservice",
+      "props": {
+        "protocol": "gRPC",
+        "port": 7000,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "frontend",
+      "rel": "CALLS",
+      "to": "shippingservice",
+      "props": {
+        "protocol": "gRPC",
+        "port": 50051,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "checkoutservice",
+      "rel": "CALLS",
+      "to": "cartservice",
+      "props": {
+        "protocol": "gRPC",
+        "port": 7070,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "checkoutservice",
+      "rel": "CALLS",
+      "to": "paymentservice",
+      "props": {
+        "protocol": "gRPC",
+        "port": 50051,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "checkoutservice",
+      "rel": "CALLS",
+      "to": "shippingservice",
+      "props": {
+        "protocol": "gRPC",
+        "port": 50051,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "checkoutservice",
+      "rel": "CALLS",
+      "to": "emailservice",
+      "props": {
+        "protocol": "gRPC",
+        "port": 8080,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "checkoutservice",
+      "rel": "CALLS",
+      "to": "currencyservice",
+      "props": {
+        "protocol": "gRPC",
+        "port": 7000,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "checkoutservice",
+      "rel": "CALLS",
+      "to": "productcatalogservice",
+      "props": {
+        "protocol": "gRPC",
+        "port": 3550,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "cartservice",
+      "rel": "CALLS",
+      "to": "redis-cart",
+      "props": {
+        "protocol": "Redis/TCP",
+        "port": 6379,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "recommendationservice",
+      "rel": "CALLS",
+      "to": "productcatalogservice",
+      "props": {
+        "protocol": "gRPC",
+        "port": 3550,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "frontend",
+      "rel": "CAN_ASSUME",
+      "to": "GCP_SA_Frontend",
+      "props": {
+        "trust_policy": "gcp:WorkloadIdentityUser",
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "checkoutservice",
+      "rel": "CAN_ASSUME",
+      "to": "GCP_SA_CheckoutService",
+      "props": {
+        "trust_policy": "gcp:WorkloadIdentityUser",
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "paymentservice",
+      "rel": "CAN_ASSUME",
+      "to": "GCP_SA_PaymentProcessor",
+      "props": {
+        "trust_policy": "gcp:WorkloadIdentityUser",
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "GCP_SA_CheckoutService",
+      "rel": "CAN_ASSUME",
+      "to": "GCP_SA_PaymentProcessor",
+      "props": {
+        "trust_policy": "iam.serviceAccounts.actAs",
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "GCP_SA_PaymentProcessor",
+      "rel": "CAN_ASSUME",
+      "to": "GCP_SA_SpannerDBAdmin",
+      "props": {
+        "trust_policy": "iam.serviceAccounts.actAs",
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "GCP_SA_PaymentProcessor",
+      "rel": "ACCESSES",
+      "to": "CreditCardVault",
+      "props": {
+        "permissions": [
+          "spanner.databases.read",
+          "spanner.databases.write"
+        ],
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "GCP_SA_SpannerDBAdmin",
+      "rel": "ACCESSES",
+      "to": "CreditCardVault",
+      "props": {
+        "permissions": [
+          "spanner.databases.admin"
+        ],
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "GCP_SA_CheckoutService",
+      "rel": "ACCESSES",
+      "to": "CustomerOrderStore",
+      "props": {
+        "permissions": [
+          "datastore.entities.get",
+          "datastore.entities.put"
+        ],
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "redis-cart",
+      "rel": "ACCESSES",
+      "to": "SessionStateStore",
+      "props": {
+        "permissions": [
+          "SET",
+          "GET"
+        ],
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "checkoutservice",
+      "rel": "DEPENDS_ON",
+      "to": "grpc_go_1_45",
+      "props": {
+        "scope": "runtime"
+      }
+    },
+    {
+      "from": "frontend",
+      "rel": "DEPENDS_ON",
+      "to": "grpc_go_1_45",
+      "props": {
+        "scope": "runtime"
+      }
+    },
+    {
+      "from": "grpc_go_1_45",
+      "rel": "HAS_VULNERABILITY",
+      "to": "CVE-2023-32731_gRPCHttp2",
+      "props": {
+        "status": "UNPATCHED"
+      }
+    },
+    {
+      "from": "checkoutservice",
+      "rel": "AFFECTED_BY",
+      "to": "CVE-2023-32731_gRPCHttp2",
+      "props": {
+        "exploitability": "CONFIRMED"
+      }
+    },
+    {
+      "from": "frontend",
+      "rel": "AFFECTED_BY",
+      "to": "CVE-2023-44487_RapidReset",
+      "props": {
+        "exploitability": "SUSPECTED"
+      }
+    },
+    {
+      "from": "paymentservice",
+      "rel": "AFFECTED_BY",
+      "to": "CVE-2022-29217_PyJWTKeyConfusion",
+      "props": {
+        "exploitability": "CONFIRMED"
+      }
+    },
+    {
+      "from": "frontend",
+      "rel": "MAINTAINED_BY",
+      "to": "CloudSRETeam",
+      "props": {
+        "sla": "Tier-0"
+      }
+    },
+    {
+      "from": "checkoutservice",
+      "rel": "MAINTAINED_BY",
+      "to": "CheckoutCoreTeam",
+      "props": {
+        "sla": "Tier-0"
+      }
+    },
+    {
+      "from": "paymentservice",
+      "rel": "MAINTAINED_BY",
+      "to": "SecOpsTeam",
+      "props": {
+        "sla": "Tier-0"
+      }
+    },
+    {
+      "from": "CreditCardVault",
+      "rel": "MAINTAINED_BY",
+      "to": "SecOpsTeam",
+      "props": {
+        "sla": "Tier-0"
+      }
+    },
+    {
+      "from": "CustomerOrderStore",
+      "rel": "MAINTAINED_BY",
+      "to": "CheckoutCoreTeam",
+      "props": {
+        "sla": "Tier-1"
+      }
+    }
+  ],
+  "scenarios": {
+    "Scenario A (CheckoutService gRPC RCE - CVE-2023-32731)": {
+      "text": "CRITICAL: HTTP/2 stream memory corruption exploit detected in CheckoutService via gRPC-Go (CVE-2023-32731) with active lateral pivot to PaymentProcessor.",
+      "service": "checkoutservice",
+      "cve": "CVE-2023-32731"
+    },
+    "Scenario B (PaymentService Key Confusion - CVE-2022-29217)": {
+      "text": "CRITICAL: JWT token forgery and key confusion exploit in PaymentService (CVE-2022-29217) accessing CreditCardVault.",
+      "service": "paymentservice",
+      "cve": "CVE-2022-29217"
+    },
+    "Scenario C (Frontend Rapid Reset DoS - CVE-2023-44487)": {
+      "text": "HIGH: HTTP/2 Rapid Reset protocol flooding attack against frontend (CVE-2023-44487).",
+      "service": "frontend",
+      "cve": "CVE-2023-44487"
+    }
+  }
+}

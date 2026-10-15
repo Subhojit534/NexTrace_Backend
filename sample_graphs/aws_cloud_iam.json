@@ -1,0 +1,465 @@
+{
+  "id": "aws_cloud_iam",
+  "name": "AWS Cloud IAM Privilege Escalation",
+  "description": "Multi-step AWS IAM privilege escalation attack graph from compromised EC2/APIs to Root Organization Admin.",
+  "nodes": [
+    {
+      "label": "Service",
+      "properties": {
+        "name": "PublicWebAPI",
+        "tier": "Edge",
+        "public_facing": true,
+        "status": "HEALTHY",
+        "runtime": "FastAPI/ALB",
+        "environment": "AWS-Production",
+        "criticality": "HIGH"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "DevEC2Workload",
+        "tier": "Compute",
+        "public_facing": true,
+        "status": "HEALTHY",
+        "runtime": "Amazon Linux 2023 / Docker",
+        "environment": "AWS-Development",
+        "criticality": "MEDIUM"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "ECSOrderFulfillment",
+        "tier": "Container",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "Node.js / Fargate",
+        "environment": "AWS-Production",
+        "criticality": "HIGH"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "LambdaDataIngest",
+        "tier": "Serverless",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "Python 3.11",
+        "environment": "AWS-Production",
+        "criticality": "MEDIUM"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "BatchETLRunner",
+        "tier": "Batch",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "AWS Glue / PySpark",
+        "environment": "AWS-Production",
+        "criticality": "LOW"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "InternalBastion",
+        "tier": "Management",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "OpenSSH / SSM",
+        "environment": "AWS-SecurityVPC",
+        "criticality": "HIGH"
+      }
+    },
+    {
+      "label": "IAMRole",
+      "properties": {
+        "name": "IAMRole_EC2InstanceProfile",
+        "arn": "arn:aws:iam::123456789:role/EC2BasicInstanceProfile",
+        "privilege_level": "RESTRICTED",
+        "max_session_duration": 3600
+      }
+    },
+    {
+      "label": "IAMRole",
+      "properties": {
+        "name": "IAMRole_DevDeployer",
+        "arn": "arn:aws:iam::123456789:role/DevDeployerRole",
+        "privilege_level": "ELEVATED",
+        "max_session_duration": 7200
+      }
+    },
+    {
+      "label": "IAMRole",
+      "properties": {
+        "name": "IAMRole_SecOpsPrivilegeEscalator",
+        "arn": "arn:aws:iam::123456789:role/SecOpsAuditorRole",
+        "privilege_level": "HIGH_PRIVILEGE",
+        "max_session_duration": 3600
+      }
+    },
+    {
+      "label": "IAMRole",
+      "properties": {
+        "name": "IAMRole_AWSOrganizationAdmin",
+        "arn": "arn:aws:iam::123456789:role/AWSOrganizationAdminRole",
+        "privilege_level": "ROOT_ADMIN",
+        "max_session_duration": 3600
+      }
+    },
+    {
+      "label": "IAMRole",
+      "properties": {
+        "name": "IAMRole_RDSProxy",
+        "arn": "arn:aws:iam::123456789:role/RDSProxyAdminRole",
+        "privilege_level": "DATABASE_ADMIN",
+        "max_session_duration": 7200
+      }
+    },
+    {
+      "label": "Database",
+      "properties": {
+        "name": "S3_FinancialAuditDataLake",
+        "crown_jewel": true,
+        "classification": "PCI-DSS Confidential",
+        "engine": "Amazon S3 Encrypted SSE-KMS",
+        "records_count": "12TB raw financials",
+        "contains_pii": true
+      }
+    },
+    {
+      "label": "Database",
+      "properties": {
+        "name": "RDS_ProductionCustomerVault",
+        "crown_jewel": true,
+        "classification": "Top Secret",
+        "engine": "Amazon Aurora PostgreSQL Multi-AZ",
+        "records_count": "5.5M records",
+        "contains_pii": true
+      }
+    },
+    {
+      "label": "Database",
+      "properties": {
+        "name": "CloudTrailSecurityLogs",
+        "crown_jewel": false,
+        "classification": "Internal",
+        "engine": "CloudWatch / Athena",
+        "records_count": "200M events",
+        "contains_pii": false
+      }
+    },
+    {
+      "label": "Library",
+      "properties": {
+        "name": "boto3_1_28",
+        "version": "1.28.1",
+        "ecosystem": "PyPI",
+        "license": "Apache-2.0"
+      }
+    },
+    {
+      "label": "Library",
+      "properties": {
+        "name": "urllib3_1_26",
+        "version": "1.26.15",
+        "ecosystem": "PyPI",
+        "license": "MIT"
+      }
+    },
+    {
+      "label": "Vulnerability",
+      "properties": {
+        "name": "CVE-2023-38035_SSRF_IMDSv1",
+        "cve_id": "CVE-2023-38035",
+        "cvss": 9.8,
+        "severity": "CRITICAL",
+        "attack_vector": "NETWORK",
+        "description": "SSRF vulnerability allowing metadata theft via AWS Instance Metadata Service (IMDSv1)."
+      }
+    },
+    {
+      "label": "Vulnerability",
+      "properties": {
+        "name": "CVE-2024-28056_IAMPolicyInjection",
+        "cve_id": "CVE-2024-28056",
+        "cvss": 8.8,
+        "severity": "HIGH",
+        "attack_vector": "NETWORK",
+        "description": "IAM assume-role trust policy injection enabling unauthorized privilege escalation to AdministratorAccess."
+      }
+    },
+    {
+      "label": "Vulnerability",
+      "properties": {
+        "name": "CVE-2024-21626_ContainerEscape",
+        "cve_id": "CVE-2024-21626",
+        "cvss": 8.6,
+        "severity": "HIGH",
+        "attack_vector": "LOCAL",
+        "description": "runc container escape enabling host takeover and IAM credential harvesting."
+      }
+    },
+    {
+      "label": "Team",
+      "properties": {
+        "name": "CloudInfrastructureTeam",
+        "on_call": "aws-infra",
+        "slack_channel": "#aws-infra",
+        "lead": "cloud-architect@enterprise.corp"
+      }
+    },
+    {
+      "label": "Team",
+      "properties": {
+        "name": "SecOpsRedTeam",
+        "on_call": "secops-iam",
+        "slack_channel": "#iam-governance",
+        "lead": "iam-lead@enterprise.corp"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "from": "PublicWebAPI",
+      "rel": "CALLS",
+      "to": "ECSOrderFulfillment",
+      "props": {
+        "protocol": "HTTPS",
+        "port": 443,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "DevEC2Workload",
+      "rel": "CALLS",
+      "to": "LambdaDataIngest",
+      "props": {
+        "protocol": "AWS-SDK/HTTPS",
+        "port": 443,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "ECSOrderFulfillment",
+      "rel": "CALLS",
+      "to": "LambdaDataIngest",
+      "props": {
+        "protocol": "AWS-SDK/HTTPS",
+        "port": 443,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "LambdaDataIngest",
+      "rel": "CALLS",
+      "to": "BatchETLRunner",
+      "props": {
+        "protocol": "SQS/EventBridge",
+        "port": 443,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "DevEC2Workload",
+      "rel": "CAN_ASSUME",
+      "to": "IAMRole_EC2InstanceProfile",
+      "props": {
+        "trust_policy": "ec2:AssumeRole",
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "PublicWebAPI",
+      "rel": "CAN_ASSUME",
+      "to": "IAMRole_DevDeployer",
+      "props": {
+        "trust_policy": "sts:AssumeRole",
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "ECSOrderFulfillment",
+      "rel": "CAN_ASSUME",
+      "to": "IAMRole_DevDeployer",
+      "props": {
+        "trust_policy": "sts:AssumeRole",
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "IAMRole_EC2InstanceProfile",
+      "rel": "CAN_ASSUME",
+      "to": "IAMRole_DevDeployer",
+      "props": {
+        "technique": "iam:PassRole / sts:AssumeRole",
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "IAMRole_DevDeployer",
+      "rel": "CAN_ASSUME",
+      "to": "IAMRole_SecOpsPrivilegeEscalator",
+      "props": {
+        "technique": "iam:CreatePolicyVersion escalation",
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "IAMRole_SecOpsPrivilegeEscalator",
+      "rel": "CAN_ASSUME",
+      "to": "IAMRole_AWSOrganizationAdmin",
+      "props": {
+        "technique": "iam:AttachRolePolicy to AdministratorAccess",
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "IAMRole_SecOpsPrivilegeEscalator",
+      "rel": "CAN_ASSUME",
+      "to": "IAMRole_RDSProxy",
+      "props": {
+        "trust_policy": "sts:AssumeRoleChain",
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "IAMRole_AWSOrganizationAdmin",
+      "rel": "ACCESSES",
+      "to": "S3_FinancialAuditDataLake",
+      "props": {
+        "permissions": [
+          "s3:GetObject",
+          "s3:ListBucket",
+          "s3:PutObject"
+        ],
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "IAMRole_RDSProxy",
+      "rel": "ACCESSES",
+      "to": "RDS_ProductionCustomerVault",
+      "props": {
+        "permissions": [
+          "rds-db:connect",
+          "SELECT",
+          "UPDATE"
+        ],
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "LambdaDataIngest",
+      "rel": "ACCESSES",
+      "to": "CloudTrailSecurityLogs",
+      "props": {
+        "permissions": [
+          "logs:PutLogEvents"
+        ],
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "DevEC2Workload",
+      "rel": "DEPENDS_ON",
+      "to": "urllib3_1_26",
+      "props": {
+        "scope": "runtime"
+      }
+    },
+    {
+      "from": "PublicWebAPI",
+      "rel": "DEPENDS_ON",
+      "to": "boto3_1_28",
+      "props": {
+        "scope": "runtime"
+      }
+    },
+    {
+      "from": "urllib3_1_26",
+      "rel": "HAS_VULNERABILITY",
+      "to": "CVE-2023-38035_SSRF_IMDSv1",
+      "props": {
+        "status": "UNPATCHED"
+      }
+    },
+    {
+      "from": "DevEC2Workload",
+      "rel": "AFFECTED_BY",
+      "to": "CVE-2023-38035_SSRF_IMDSv1",
+      "props": {
+        "exploitability": "CONFIRMED"
+      }
+    },
+    {
+      "from": "PublicWebAPI",
+      "rel": "AFFECTED_BY",
+      "to": "CVE-2024-28056_IAMPolicyInjection",
+      "props": {
+        "exploitability": "CONFIRMED"
+      }
+    },
+    {
+      "from": "ECSOrderFulfillment",
+      "rel": "AFFECTED_BY",
+      "to": "CVE-2024-21626_ContainerEscape",
+      "props": {
+        "exploitability": "SUSPECTED"
+      }
+    },
+    {
+      "from": "PublicWebAPI",
+      "rel": "MAINTAINED_BY",
+      "to": "CloudInfrastructureTeam",
+      "props": {
+        "sla": "Tier-0"
+      }
+    },
+    {
+      "from": "DevEC2Workload",
+      "rel": "MAINTAINED_BY",
+      "to": "CloudInfrastructureTeam",
+      "props": {
+        "sla": "Tier-1"
+      }
+    },
+    {
+      "from": "S3_FinancialAuditDataLake",
+      "rel": "MAINTAINED_BY",
+      "to": "SecOpsRedTeam",
+      "props": {
+        "sla": "Tier-0"
+      }
+    },
+    {
+      "from": "RDS_ProductionCustomerVault",
+      "rel": "MAINTAINED_BY",
+      "to": "SecOpsRedTeam",
+      "props": {
+        "sla": "Tier-0"
+      }
+    }
+  ],
+  "scenarios": {
+    "Scenario A (DevEC2Workload SSRF Credential Theft - CVE-2023-38035)": {
+      "text": "CRITICAL: SSRF exploit against DevEC2Workload stealing IMDSv1 session tokens, pivoting via IAM role escalation to AWS Organization Admin.",
+      "service": "DevEC2Workload",
+      "cve": "CVE-2023-38035"
+    },
+    "Scenario B (PublicWebAPI IAM Policy Injection - CVE-2024-28056)": {
+      "text": "HIGH SEVERITY: IAM AssumeRole trust policy injection on PublicWebAPI (CVE-2024-28056) attempting database takeover on RDS Production Customer Vault.",
+      "service": "PublicWebAPI",
+      "cve": "CVE-2024-28056"
+    },
+    "Scenario C (ECS Container Breakout - CVE-2024-21626)": {
+      "text": "HIGH SEVERITY: runc container escape in ECSOrderFulfillment attempting host level credential exfiltration.",
+      "service": "ECSOrderFulfillment",
+      "cve": "CVE-2024-21626"
+    }
+  }
+}

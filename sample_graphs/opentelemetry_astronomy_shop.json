@@ -1,0 +1,278 @@
+{
+  "id": "opentelemetry_demo",
+  "name": "OpenTelemetry Astronomy Shop",
+  "description": "Official OpenTelemetry polyglot microservices benchmark featuring Envoy edge proxy, Go/Node.js/C#/.NET services, and PostgreSQL card vaults.",
+  "nodes": [
+    {
+      "name": "FrontendProxy_Envoy",
+      "tier": "edge",
+      "public_facing": true,
+      "runtime": "Envoy Proxy / C++",
+      "port": 8080,
+      "label": "Gateway",
+      "properties": {
+        "name": "FrontendProxy_Envoy",
+        "tier": "edge",
+        "public_facing": true,
+        "runtime": "Envoy Proxy / C++",
+        "port": 8080
+      }
+    },
+    {
+      "name": "FrontendService",
+      "tier": "web",
+      "runtime": "Next.js / TypeScript",
+      "port": 8084,
+      "label": "Service",
+      "properties": {
+        "name": "FrontendService",
+        "tier": "web",
+        "runtime": "Next.js / TypeScript",
+        "port": 8084
+      }
+    },
+    {
+      "name": "CheckoutService",
+      "tier": "checkout",
+      "runtime": "Go 1.22",
+      "port": 5050,
+      "label": "Service",
+      "properties": {
+        "name": "CheckoutService",
+        "tier": "checkout",
+        "runtime": "Go 1.22",
+        "port": 5050
+      }
+    },
+    {
+      "name": "PaymentService",
+      "tier": "payment",
+      "runtime": "Node.js 20",
+      "port": 50051,
+      "label": "Service",
+      "properties": {
+        "name": "PaymentService",
+        "tier": "payment",
+        "runtime": "Node.js 20",
+        "port": 50051
+      }
+    },
+    {
+      "name": "CartService",
+      "tier": "cart",
+      "runtime": "C# / .NET 8.0",
+      "port": 7070,
+      "label": "Service",
+      "properties": {
+        "name": "CartService",
+        "tier": "cart",
+        "runtime": "C# / .NET 8.0",
+        "port": 7070
+      }
+    },
+    {
+      "name": "ProductCatalogService",
+      "tier": "catalog",
+      "runtime": "Go 1.22",
+      "port": 3550,
+      "label": "Service",
+      "properties": {
+        "name": "ProductCatalogService",
+        "tier": "catalog",
+        "runtime": "Go 1.22",
+        "port": 3550
+      }
+    },
+    {
+      "name": "ShippingService",
+      "tier": "fulfillment",
+      "runtime": "Rust 1.76",
+      "port": 50050,
+      "label": "Service",
+      "properties": {
+        "name": "ShippingService",
+        "tier": "fulfillment",
+        "runtime": "Rust 1.76",
+        "port": 50050
+      }
+    },
+    {
+      "name": "AccountingService",
+      "tier": "finance",
+      "runtime": "C# / .NET 8.0",
+      "port": 8082,
+      "label": "Service",
+      "properties": {
+        "name": "AccountingService",
+        "tier": "finance",
+        "runtime": "C# / .NET 8.0",
+        "port": 8082
+      }
+    },
+    {
+      "name": "KafkaMessageBus",
+      "tier": "streaming",
+      "runtime": "Apache Kafka 3.6",
+      "port": 9092,
+      "label": "Queue",
+      "properties": {
+        "name": "KafkaMessageBus",
+        "tier": "streaming",
+        "runtime": "Apache Kafka 3.6",
+        "port": 9092
+      }
+    },
+    {
+      "name": "RedisCartStore",
+      "tier": "cache",
+      "runtime": "Valkey / Redis 7.2",
+      "port": 6379,
+      "crown_jewel": true,
+      "label": "DataStore",
+      "properties": {
+        "name": "RedisCartStore",
+        "tier": "cache",
+        "runtime": "Valkey / Redis 7.2",
+        "port": 6379,
+        "crown_jewel": true
+      }
+    },
+    {
+      "name": "OTel_PaymentVault",
+      "tier": "vault",
+      "crown_jewel": true,
+      "storage_engine": "PostgreSQL 16 (PCI Encrypted)",
+      "criticality": "CRITICAL",
+      "label": "Database",
+      "properties": {
+        "name": "OTel_PaymentVault",
+        "tier": "vault",
+        "crown_jewel": true,
+        "storage_engine": "PostgreSQL 16 (PCI Encrypted)",
+        "criticality": "CRITICAL"
+      }
+    },
+    {
+      "name": "AccountingLedgerDB",
+      "tier": "ledger",
+      "crown_jewel": true,
+      "storage_engine": "Amazon Aurora Serverless",
+      "criticality": "HIGH",
+      "label": "Database",
+      "properties": {
+        "name": "AccountingLedgerDB",
+        "tier": "ledger",
+        "crown_jewel": true,
+        "storage_engine": "Amazon Aurora Serverless",
+        "criticality": "HIGH"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "from": "FrontendProxy_Envoy",
+      "rel": "CALLS",
+      "to": "FrontendService",
+      "props": {
+        "protocol": "HTTP/2"
+      }
+    },
+    {
+      "from": "FrontendService",
+      "rel": "CALLS",
+      "to": "CheckoutService",
+      "props": {
+        "protocol": "gRPC"
+      }
+    },
+    {
+      "from": "FrontendService",
+      "rel": "CALLS",
+      "to": "CartService",
+      "props": {
+        "protocol": "gRPC"
+      }
+    },
+    {
+      "from": "FrontendService",
+      "rel": "CALLS",
+      "to": "ProductCatalogService",
+      "props": {
+        "protocol": "gRPC"
+      }
+    },
+    {
+      "from": "CartService",
+      "rel": "ACCESSES",
+      "to": "RedisCartStore",
+      "props": {
+        "protocol": "RESP"
+      }
+    },
+    {
+      "from": "CheckoutService",
+      "rel": "CALLS",
+      "to": "PaymentService",
+      "props": {
+        "protocol": "gRPC"
+      }
+    },
+    {
+      "from": "CheckoutService",
+      "rel": "CALLS",
+      "to": "ShippingService",
+      "props": {
+        "protocol": "gRPC"
+      }
+    },
+    {
+      "from": "CheckoutService",
+      "rel": "PUBLISHES",
+      "to": "KafkaMessageBus",
+      "props": {
+        "topic": "orders"
+      }
+    },
+    {
+      "from": "PaymentService",
+      "rel": "ACCESSES",
+      "to": "OTel_PaymentVault",
+      "props": {
+        "permission": "read_write"
+      }
+    },
+    {
+      "from": "KafkaMessageBus",
+      "rel": "SUBSCRIBES",
+      "to": "AccountingService",
+      "props": {
+        "topic": "orders"
+      }
+    },
+    {
+      "from": "AccountingService",
+      "rel": "ACCESSES",
+      "to": "AccountingLedgerDB",
+      "props": {
+        "permission": "write"
+      }
+    }
+  ],
+  "scenarios": {
+    "Scenario A (CheckoutService Memory Corruption - CVE-2023-32731)": {
+      "text": "CRITICAL: gRPC memory corruption in CheckoutService (CVE-2023-32731) pivoting to PaymentService and OTel_PaymentVault.",
+      "service": "CheckoutService",
+      "cve": "CVE-2023-32731"
+    },
+    "Scenario B (PaymentService Deserialization - CVE-2022-25845)": {
+      "text": "HIGH SEVERITY: Arbitrary code execution in PaymentService targeting OTel_PaymentVault customer secrets.",
+      "service": "PaymentService",
+      "cve": "CVE-2022-25845"
+    },
+    "Scenario C (CartService Memory Leak - CVE-2023-44487)": {
+      "text": "HIGH SEVERITY: HTTP/2 Rapid Reset protocol flooding attack against CartService.",
+      "service": "CartService",
+      "cve": "CVE-2023-44487"
+    }
+  }
+}

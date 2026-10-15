@@ -1,0 +1,720 @@
+{
+  "id": "fintech_enterprise",
+  "name": "FinTech Enterprise Core (Default 34-Node Mesh)",
+  "description": "Enterprise microservice mesh with Tier-0/1 services, AWS IAM roles, and PCI/Customer database crown jewels.",
+  "nodes": [
+    {
+      "label": "Service",
+      "properties": {
+        "name": "PublicAPIGateway",
+        "tier": "Edge",
+        "public_facing": true,
+        "status": "HEALTHY",
+        "runtime": "Kong/Envoy",
+        "environment": "Production",
+        "criticality": "HIGH"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "CustomerWebPortal",
+        "tier": "Edge",
+        "public_facing": true,
+        "status": "HEALTHY",
+        "runtime": "Next.js/Node",
+        "environment": "Production",
+        "criticality": "HIGH"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "PartnerWebhookIngress",
+        "tier": "Edge",
+        "public_facing": true,
+        "status": "HEALTHY",
+        "runtime": "Go/Fiber",
+        "environment": "Production",
+        "criticality": "MEDIUM"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "AuthService",
+        "tier": "Core",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "Python/FastAPI",
+        "environment": "Production",
+        "criticality": "CRITICAL"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "PaymentService",
+        "tier": "Core",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "Java/Spring",
+        "environment": "Production",
+        "criticality": "CRITICAL"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "OrderService",
+        "tier": "Core",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "Node/Express",
+        "environment": "Production",
+        "criticality": "HIGH"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "InventoryService",
+        "tier": "Internal",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "Go/Gin",
+        "environment": "Production",
+        "criticality": "MEDIUM"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "NotificationWorker",
+        "tier": "Internal",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "Python/Celery",
+        "environment": "Production",
+        "criticality": "LOW"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "AnalyticsEngine",
+        "tier": "Data",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "Python/Pandas",
+        "environment": "Production",
+        "criticality": "MEDIUM"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "DataPipelineWorker",
+        "tier": "Data",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "Scala/Spark",
+        "environment": "Production",
+        "criticality": "MEDIUM"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "AdminPortal",
+        "tier": "Management",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "React/Node",
+        "environment": "Internal-VPN",
+        "criticality": "HIGH"
+      }
+    },
+    {
+      "label": "Service",
+      "properties": {
+        "name": "SecretsManagerAgent",
+        "tier": "Security",
+        "public_facing": false,
+        "status": "HEALTHY",
+        "runtime": "HashiCorp/Vault",
+        "environment": "Production",
+        "criticality": "CRITICAL"
+      }
+    },
+    {
+      "label": "Library",
+      "properties": {
+        "name": "libcrypto_v1_1",
+        "version": "1.1.1u",
+        "ecosystem": "C/OpenSSL",
+        "license": "Apache-2.0"
+      }
+    },
+    {
+      "label": "Library",
+      "properties": {
+        "name": "fastjson_v1_2",
+        "version": "1.2.80",
+        "ecosystem": "Maven",
+        "license": "Apache-2.0"
+      }
+    },
+    {
+      "label": "Library",
+      "properties": {
+        "name": "xz_utils_5_6_0",
+        "version": "5.6.0",
+        "ecosystem": "C/Tukaani",
+        "license": "GPL-2.0"
+      }
+    },
+    {
+      "label": "Library",
+      "properties": {
+        "name": "pyyaml_5_3",
+        "version": "5.3.1",
+        "ecosystem": "PyPI",
+        "license": "MIT"
+      }
+    },
+    {
+      "label": "Vulnerability",
+      "properties": {
+        "name": "CVE-2024-3094_XZBackdoor",
+        "cve_id": "CVE-2024-3094",
+        "cvss": 10.0,
+        "severity": "CRITICAL",
+        "attack_vector": "NETWORK",
+        "description": "Malicious backdoor in upstream xz-utils liblzma enabling unauthorized authentication bypass and RCE."
+      }
+    },
+    {
+      "label": "Vulnerability",
+      "properties": {
+        "name": "CVE-2022-25845_FastjsonRCE",
+        "cve_id": "CVE-2022-25845",
+        "cvss": 9.8,
+        "severity": "CRITICAL",
+        "attack_vector": "NETWORK",
+        "description": "AutoType bypass deserialization vulnerability leading to arbitrary remote command execution."
+      }
+    },
+    {
+      "label": "Vulnerability",
+      "properties": {
+        "name": "CVE-2024-21626_RuncEscape",
+        "cve_id": "CVE-2024-21626",
+        "cvss": 8.6,
+        "severity": "HIGH",
+        "attack_vector": "LOCAL",
+        "description": "Leaked file descriptors in runc container runtime allow container breakout to host filesystem."
+      }
+    },
+    {
+      "label": "Vulnerability",
+      "properties": {
+        "name": "CVE-2023-44487_RapidReset",
+        "cve_id": "CVE-2023-44487",
+        "cvss": 7.5,
+        "severity": "HIGH",
+        "attack_vector": "NETWORK",
+        "description": "HTTP/2 Rapid Reset protocol flaw enabling DDoS resource exhaustion."
+      }
+    },
+    {
+      "label": "IAMRole",
+      "properties": {
+        "name": "IAMRole_APIGatewayExecution",
+        "arn": "arn:aws:iam::123456789:role/APIGatewayRole",
+        "privilege_level": "RESTRICTED",
+        "max_session_duration": 3600
+      }
+    },
+    {
+      "label": "IAMRole",
+      "properties": {
+        "name": "IAMRole_AuthServicePrivileged",
+        "arn": "arn:aws:iam::123456789:role/AuthServiceRole",
+        "privilege_level": "ELEVATED",
+        "max_session_duration": 7200
+      }
+    },
+    {
+      "label": "IAMRole",
+      "properties": {
+        "name": "IAMRole_PaymentAdmin",
+        "arn": "arn:aws:iam::123456789:role/PaymentAdminRole",
+        "privilege_level": "HIGH_PRIVILEGE",
+        "max_session_duration": 3600
+      }
+    },
+    {
+      "label": "IAMRole",
+      "properties": {
+        "name": "IAMRole_DBAccessProxy",
+        "arn": "arn:aws:iam::123456789:role/DBAccessProxyRole",
+        "privilege_level": "DATABASE_ADMIN",
+        "max_session_duration": 7200
+      }
+    },
+    {
+      "label": "IAMRole",
+      "properties": {
+        "name": "IAMRole_AnalyticsReader",
+        "arn": "arn:aws:iam::123456789:role/AnalyticsReaderRole",
+        "privilege_level": "READ_ONLY",
+        "max_session_duration": 14400
+      }
+    },
+    {
+      "label": "IAMRole",
+      "properties": {
+        "name": "IAMRole_K8sClusterAdmin",
+        "arn": "arn:aws:iam::123456789:role/K8sClusterAdminRole",
+        "privilege_level": "ROOT_ADMIN",
+        "max_session_duration": 3600
+      }
+    },
+    {
+      "label": "Database",
+      "properties": {
+        "name": "ProdCustomerDB",
+        "crown_jewel": true,
+        "classification": "Confidential",
+        "engine": "PostgreSQL RDS Multi-AZ",
+        "records_count": "2.4M records",
+        "contains_pii": true
+      }
+    },
+    {
+      "label": "Database",
+      "properties": {
+        "name": "PCI_PaymentVault",
+        "crown_jewel": true,
+        "classification": "PCI-DSS Top Secret",
+        "engine": "AWS DynamoDB Encrypted KMS",
+        "records_count": "850K tokens",
+        "contains_pii": true
+      }
+    },
+    {
+      "label": "Database",
+      "properties": {
+        "name": "UserCredentialsStore",
+        "crown_jewel": true,
+        "classification": "Top Secret",
+        "engine": "Hardware Security Redis",
+        "records_count": "2.4M hashes",
+        "contains_pii": true
+      }
+    },
+    {
+      "label": "Database",
+      "properties": {
+        "name": "AuditLogsDB",
+        "crown_jewel": false,
+        "classification": "Internal",
+        "engine": "Elasticsearch OpenSearch",
+        "records_count": "150M events",
+        "contains_pii": false
+      }
+    },
+    {
+      "label": "Team",
+      "properties": {
+        "name": "SecOpsTeam",
+        "on_call": "secops-tier1",
+        "slack_channel": "#secops-incidents",
+        "lead": "chief-security@enterprise.corp"
+      }
+    },
+    {
+      "label": "Team",
+      "properties": {
+        "name": "PlatformTeam",
+        "on_call": "infra-sre",
+        "slack_channel": "#cloud-platform",
+        "lead": "infra-lead@enterprise.corp"
+      }
+    },
+    {
+      "label": "Team",
+      "properties": {
+        "name": "BillingTeam",
+        "on_call": "billing-eng",
+        "slack_channel": "#payments-billing",
+        "lead": "billing-lead@enterprise.corp"
+      }
+    },
+    {
+      "label": "Team",
+      "properties": {
+        "name": "CoreBackendTeam",
+        "on_call": "core-backend",
+        "slack_channel": "#core-services",
+        "lead": "backend-architect@enterprise.corp"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "from": "PublicAPIGateway",
+      "rel": "CALLS",
+      "to": "AuthService",
+      "props": {
+        "protocol": "HTTPS/gRPC",
+        "port": 8443,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "PublicAPIGateway",
+      "rel": "CALLS",
+      "to": "OrderService",
+      "props": {
+        "protocol": "HTTPS/REST",
+        "port": 8080,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "CustomerWebPortal",
+      "rel": "CALLS",
+      "to": "AuthService",
+      "props": {
+        "protocol": "HTTPS/REST",
+        "port": 8443,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "CustomerWebPortal",
+      "rel": "CALLS",
+      "to": "InventoryService",
+      "props": {
+        "protocol": "HTTPS/REST",
+        "port": 8081,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "PartnerWebhookIngress",
+      "rel": "CALLS",
+      "to": "NotificationWorker",
+      "props": {
+        "protocol": "mTLS/HTTP",
+        "port": 9000,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "AuthService",
+      "rel": "CALLS",
+      "to": "PaymentService",
+      "props": {
+        "protocol": "gRPC",
+        "port": 9090,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "OrderService",
+      "rel": "CALLS",
+      "to": "PaymentService",
+      "props": {
+        "protocol": "REST",
+        "port": 9090,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "OrderService",
+      "rel": "CALLS",
+      "to": "InventoryService",
+      "props": {
+        "protocol": "REST",
+        "port": 8081,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "PaymentService",
+      "rel": "CALLS",
+      "to": "SecretsManagerAgent",
+      "props": {
+        "protocol": "HTTPS",
+        "port": 8200,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "DataPipelineWorker",
+      "rel": "CALLS",
+      "to": "AnalyticsEngine",
+      "props": {
+        "protocol": "Kafka/TCP",
+        "port": 9092,
+        "status": "ACTIVE"
+      }
+    },
+    {
+      "from": "AuthService",
+      "rel": "DEPENDS_ON",
+      "to": "xz_utils_5_6_0",
+      "props": {
+        "scope": "compiled-native"
+      }
+    },
+    {
+      "from": "AuthService",
+      "rel": "DEPENDS_ON",
+      "to": "libcrypto_v1_1",
+      "props": {
+        "scope": "runtime"
+      }
+    },
+    {
+      "from": "OrderService",
+      "rel": "DEPENDS_ON",
+      "to": "fastjson_v1_2",
+      "props": {
+        "scope": "runtime"
+      }
+    },
+    {
+      "from": "DataPipelineWorker",
+      "rel": "DEPENDS_ON",
+      "to": "pyyaml_5_3",
+      "props": {
+        "scope": "runtime"
+      }
+    },
+    {
+      "from": "PublicAPIGateway",
+      "rel": "CAN_ASSUME",
+      "to": "IAMRole_APIGatewayExecution",
+      "props": {
+        "trust_policy": "sts:AssumeRole",
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "AuthService",
+      "rel": "CAN_ASSUME",
+      "to": "IAMRole_AuthServicePrivileged",
+      "props": {
+        "trust_policy": "sts:AssumeRole",
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "PaymentService",
+      "rel": "CAN_ASSUME",
+      "to": "IAMRole_PaymentAdmin",
+      "props": {
+        "trust_policy": "sts:AssumeRole",
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "AdminPortal",
+      "rel": "CAN_ASSUME",
+      "to": "IAMRole_K8sClusterAdmin",
+      "props": {
+        "trust_policy": "sts:AssumeRole",
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "AnalyticsEngine",
+      "rel": "CAN_ASSUME",
+      "to": "IAMRole_AnalyticsReader",
+      "props": {
+        "trust_policy": "sts:AssumeRole",
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "IAMRole_AuthServicePrivileged",
+      "rel": "CAN_ASSUME",
+      "to": "IAMRole_DBAccessProxy",
+      "props": {
+        "trust_policy": "sts:AssumeRoleChain",
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "IAMRole_K8sClusterAdmin",
+      "rel": "CAN_ASSUME",
+      "to": "IAMRole_PaymentAdmin",
+      "props": {
+        "trust_policy": "sts:AssumeRoleChain",
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "IAMRole_DBAccessProxy",
+      "rel": "ACCESSES",
+      "to": "ProdCustomerDB",
+      "props": {
+        "permissions": [
+          "SELECT",
+          "INSERT",
+          "UPDATE"
+        ],
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "IAMRole_DBAccessProxy",
+      "rel": "ACCESSES",
+      "to": "UserCredentialsStore",
+      "props": {
+        "permissions": [
+          "HGETALL",
+          "HSET"
+        ],
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "IAMRole_PaymentAdmin",
+      "rel": "ACCESSES",
+      "to": "PCI_PaymentVault",
+      "props": {
+        "permissions": [
+          "GetItem",
+          "PutItem",
+          "Decrypt"
+        ],
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "IAMRole_PaymentAdmin",
+      "rel": "ACCESSES",
+      "to": "ProdCustomerDB",
+      "props": {
+        "permissions": [
+          "SELECT",
+          "UPDATE"
+        ],
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "IAMRole_AnalyticsReader",
+      "rel": "ACCESSES",
+      "to": "AuditLogsDB",
+      "props": {
+        "permissions": [
+          "READ"
+        ],
+        "status": "PERMITTED"
+      }
+    },
+    {
+      "from": "xz_utils_5_6_0",
+      "rel": "HAS_VULNERABILITY",
+      "to": "CVE-2024-3094_XZBackdoor",
+      "props": {
+        "status": "UNPATCHED"
+      }
+    },
+    {
+      "from": "fastjson_v1_2",
+      "rel": "HAS_VULNERABILITY",
+      "to": "CVE-2022-25845_FastjsonRCE",
+      "props": {
+        "status": "UNPATCHED"
+      }
+    },
+    {
+      "from": "AuthService",
+      "rel": "AFFECTED_BY",
+      "to": "CVE-2024-3094_XZBackdoor",
+      "props": {
+        "exploitability": "CONFIRMED"
+      }
+    },
+    {
+      "from": "OrderService",
+      "rel": "AFFECTED_BY",
+      "to": "CVE-2022-25845_FastjsonRCE",
+      "props": {
+        "exploitability": "SUSPECTED"
+      }
+    },
+    {
+      "from": "NotificationWorker",
+      "rel": "AFFECTED_BY",
+      "to": "CVE-2023-44487_RapidReset",
+      "props": {
+        "exploitability": "EXPOSED"
+      }
+    },
+    {
+      "from": "AuthService",
+      "rel": "MAINTAINED_BY",
+      "to": "CoreBackendTeam",
+      "props": {
+        "sla": "Tier-1"
+      }
+    },
+    {
+      "from": "PaymentService",
+      "rel": "MAINTAINED_BY",
+      "to": "BillingTeam",
+      "props": {
+        "sla": "Tier-1"
+      }
+    },
+    {
+      "from": "PublicAPIGateway",
+      "rel": "MAINTAINED_BY",
+      "to": "PlatformTeam",
+      "props": {
+        "sla": "Tier-0"
+      }
+    },
+    {
+      "from": "ProdCustomerDB",
+      "rel": "MAINTAINED_BY",
+      "to": "PlatformTeam",
+      "props": {
+        "sla": "Tier-0"
+      }
+    },
+    {
+      "from": "PCI_PaymentVault",
+      "rel": "MAINTAINED_BY",
+      "to": "SecOpsTeam",
+      "props": {
+        "sla": "Tier-0"
+      }
+    }
+  ],
+  "scenarios": {
+    "Scenario A (AuthService RCE - Zero-Day CVE-2024-3094)": {
+      "text": "CRITICAL ZERO-DAY: Remote code execution backdoor detected in AuthService via xz-utils liblzma (CVE-2024-3094). Ingress observed from PublicAPIGateway.",
+      "service": "AuthService",
+      "cve": "CVE-2024-3094"
+    },
+    "Scenario B (OrderService Deserialization CVE-2022-25845)": {
+      "text": "HIGH SEVERITY: Remote arbitrary deserialization exploit observed in OrderService (CVE-2022-25845 Fastjson). Outbound calls to PaymentService detected.",
+      "service": "OrderService",
+      "cve": "CVE-2022-25845"
+    },
+    "Scenario C (NotificationWorker DDoS CVE-2023-44487)": {
+      "text": "HIGH SEVERITY: HTTP/2 Rapid Reset protocol resource exhaustion attack on NotificationWorker (CVE-2023-44487) from PartnerWebhookIngress.",
+      "service": "NotificationWorker",
+      "cve": "CVE-2023-44487"
+    }
+  }
+}

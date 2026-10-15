@@ -1,0 +1,87 @@
+{
+  "name": "Azure Enterprise Cloud Infrastructure",
+  "description": "Multi-tier Azure enterprise topology with Azure Front Door ingress, App Service, Managed Identities, Azure Key Vault, and Azure SQL DB.",
+  "nodes": [
+    {
+      "name": "AzureFrontDoor_Ingress",
+      "label": "Gateway",
+      "public_facing": true,
+      "cloud_provider": "Azure",
+      "tier": "edge"
+    },
+    {
+      "name": "AppService_EcommerceApi",
+      "label": "Service",
+      "cloud_provider": "Azure",
+      "tier": "web-tier",
+      "runtime": ".NET 8.0"
+    },
+    {
+      "name": "AzureFunctions_InvoiceProcessor",
+      "label": "Service",
+      "cloud_provider": "Azure",
+      "tier": "compute",
+      "runtime": "Node.js 20"
+    },
+    {
+      "name": "EntraID_ManagedIdentity",
+      "label": "IAMRole",
+      "cloud_provider": "Azure",
+      "role_definition": "Key Vault Administrator & SQL Contributor"
+    },
+    {
+      "name": "AzureKeyVault_MasterHSM",
+      "label": "Database",
+      "crown_jewel": true,
+      "cloud_provider": "Azure",
+      "tier": "security-vault",
+      "criticality": "CRITICAL"
+    },
+    {
+      "name": "AzureSQL_EnterpriseDB",
+      "label": "Database",
+      "crown_jewel": true,
+      "cloud_provider": "Azure",
+      "tier": "data",
+      "criticality": "HIGH"
+    },
+    {
+      "name": "BlobStorage_ColdBackups",
+      "label": "Storage",
+      "cloud_provider": "Azure",
+      "tier": "storage"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "AzureFrontDoor_Ingress",
+      "target": "AppService_EcommerceApi",
+      "type": "CALLS"
+    },
+    {
+      "source": "AppService_EcommerceApi",
+      "target": "AzureFunctions_InvoiceProcessor",
+      "type": "CALLS"
+    },
+    {
+      "source": "AzureFunctions_InvoiceProcessor",
+      "target": "EntraID_ManagedIdentity",
+      "type": "CAN_ASSUME"
+    },
+    {
+      "source": "EntraID_ManagedIdentity",
+      "target": "AzureKeyVault_MasterHSM",
+      "type": "ACCESSES"
+    },
+    {
+      "source": "EntraID_ManagedIdentity",
+      "target": "AzureSQL_EnterpriseDB",
+      "type": "ACCESSES"
+    },
+    {
+      "source": "AzureFunctions_InvoiceProcessor",
+      "target": "BlobStorage_ColdBackups",
+      "type": "WRITES_TO"
+    }
+  ]
+}

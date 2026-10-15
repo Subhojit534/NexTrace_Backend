@@ -1,0 +1,282 @@
+{
+  "id": "sock_shop",
+  "name": "Weaveworks Sock Shop Cloud-Native",
+  "description": "Standard cloud-native microservices benchmark with Traefik edge router, Spring Boot order services, and MongoDB vaults.",
+  "nodes": [
+    {
+      "name": "edge-router",
+      "tier": "edge",
+      "public_facing": true,
+      "runtime": "Traefik Ingress Controller",
+      "port": 80,
+      "label": "Gateway",
+      "properties": {
+        "name": "edge-router",
+        "tier": "edge",
+        "public_facing": true,
+        "runtime": "Traefik Ingress Controller",
+        "port": 80
+      }
+    },
+    {
+      "name": "front-end",
+      "tier": "web",
+      "runtime": "Node.js 18",
+      "port": 8079,
+      "label": "Service",
+      "properties": {
+        "name": "front-end",
+        "tier": "web",
+        "runtime": "Node.js 18",
+        "port": 8079
+      }
+    },
+    {
+      "name": "catalogue-service",
+      "tier": "backend",
+      "runtime": "Go 1.21",
+      "port": 8081,
+      "label": "Service",
+      "properties": {
+        "name": "catalogue-service",
+        "tier": "backend",
+        "runtime": "Go 1.21",
+        "port": 8081
+      }
+    },
+    {
+      "name": "catalogue-db",
+      "tier": "database",
+      "storage_engine": "MySQL 5.7",
+      "port": 3306,
+      "crown_jewel": true,
+      "label": "Database",
+      "properties": {
+        "name": "catalogue-db",
+        "tier": "database",
+        "storage_engine": "MySQL 5.7",
+        "port": 3306,
+        "crown_jewel": true
+      }
+    },
+    {
+      "name": "orders-service",
+      "tier": "backend",
+      "runtime": "Java 17 / Spring Boot",
+      "port": 8082,
+      "label": "Service",
+      "properties": {
+        "name": "orders-service",
+        "tier": "backend",
+        "runtime": "Java 17 / Spring Boot",
+        "port": 8082
+      }
+    },
+    {
+      "name": "orders-db",
+      "tier": "database",
+      "storage_engine": "MongoDB 6.0",
+      "port": 27017,
+      "crown_jewel": true,
+      "label": "Database",
+      "properties": {
+        "name": "orders-db",
+        "tier": "database",
+        "storage_engine": "MongoDB 6.0",
+        "port": 27017,
+        "crown_jewel": true
+      }
+    },
+    {
+      "name": "carts-service",
+      "tier": "backend",
+      "runtime": "Java 17 / Spring Boot",
+      "port": 8083,
+      "label": "Service",
+      "properties": {
+        "name": "carts-service",
+        "tier": "backend",
+        "runtime": "Java 17 / Spring Boot",
+        "port": 8083
+      }
+    },
+    {
+      "name": "carts-db",
+      "tier": "database",
+      "storage_engine": "MongoDB 6.0",
+      "port": 27017,
+      "crown_jewel": true,
+      "label": "Database",
+      "properties": {
+        "name": "carts-db",
+        "tier": "database",
+        "storage_engine": "MongoDB 6.0",
+        "port": 27017,
+        "crown_jewel": true
+      }
+    },
+    {
+      "name": "payment-service",
+      "tier": "backend",
+      "runtime": "Go 1.21",
+      "port": 8080,
+      "label": "Service",
+      "properties": {
+        "name": "payment-service",
+        "tier": "backend",
+        "runtime": "Go 1.21",
+        "port": 8080
+      }
+    },
+    {
+      "name": "user-service",
+      "tier": "backend",
+      "runtime": "Go 1.21",
+      "port": 8084,
+      "label": "Service",
+      "properties": {
+        "name": "user-service",
+        "tier": "backend",
+        "runtime": "Go 1.21",
+        "port": 8084
+      }
+    },
+    {
+      "name": "user-credentials-db",
+      "tier": "vault",
+      "crown_jewel": true,
+      "storage_engine": "MongoDB 6.0 (Encrypted)",
+      "criticality": "CRITICAL",
+      "label": "Database",
+      "properties": {
+        "name": "user-credentials-db",
+        "tier": "vault",
+        "crown_jewel": true,
+        "storage_engine": "MongoDB 6.0 (Encrypted)",
+        "criticality": "CRITICAL"
+      }
+    },
+    {
+      "name": "pci-payment-vault",
+      "tier": "vault",
+      "crown_jewel": true,
+      "storage_engine": "PostgreSQL 15 (PCI DSS)",
+      "criticality": "CRITICAL",
+      "label": "Database",
+      "properties": {
+        "name": "pci-payment-vault",
+        "tier": "vault",
+        "crown_jewel": true,
+        "storage_engine": "PostgreSQL 15 (PCI DSS)",
+        "criticality": "CRITICAL"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "from": "edge-router",
+      "rel": "CALLS",
+      "to": "front-end",
+      "props": {
+        "protocol": "HTTP/1.1"
+      }
+    },
+    {
+      "from": "front-end",
+      "rel": "CALLS",
+      "to": "catalogue-service",
+      "props": {
+        "protocol": "REST"
+      }
+    },
+    {
+      "from": "catalogue-service",
+      "rel": "ACCESSES",
+      "to": "catalogue-db",
+      "props": {
+        "port": 3306
+      }
+    },
+    {
+      "from": "front-end",
+      "rel": "CALLS",
+      "to": "carts-service",
+      "props": {
+        "protocol": "REST"
+      }
+    },
+    {
+      "from": "carts-service",
+      "rel": "ACCESSES",
+      "to": "carts-db",
+      "props": {
+        "port": 27017
+      }
+    },
+    {
+      "from": "front-end",
+      "rel": "CALLS",
+      "to": "orders-service",
+      "props": {
+        "protocol": "REST"
+      }
+    },
+    {
+      "from": "orders-service",
+      "rel": "ACCESSES",
+      "to": "orders-db",
+      "props": {
+        "port": 27017
+      }
+    },
+    {
+      "from": "orders-service",
+      "rel": "CALLS",
+      "to": "payment-service",
+      "props": {
+        "protocol": "REST"
+      }
+    },
+    {
+      "from": "orders-service",
+      "rel": "CALLS",
+      "to": "user-service",
+      "props": {
+        "protocol": "REST"
+      }
+    },
+    {
+      "from": "payment-service",
+      "rel": "ACCESSES",
+      "to": "pci-payment-vault",
+      "props": {
+        "permission": "pci_write"
+      }
+    },
+    {
+      "from": "user-service",
+      "rel": "ACCESSES",
+      "to": "user-credentials-db",
+      "props": {
+        "permission": "admin"
+      }
+    }
+  ],
+  "scenarios": {
+    "Scenario A (Spring4Shell RCE in orders-service - CVE-2022-22965)": {
+      "text": "CRITICAL: Spring4Shell Remote Code Execution in orders-service (CVE-2022-22965) targeting payment-vault and user credentials.",
+      "service": "orders-service",
+      "cve": "CVE-2022-22965"
+    },
+    "Scenario B (Payment Service RCE - CVE-2023-32731)": {
+      "text": "HIGH SEVERITY: Remote execution attempt in payment-service targeting pci-payment-vault credit card records.",
+      "service": "payment-service",
+      "cve": "CVE-2023-32731"
+    },
+    "Scenario C (Front-End Rapid Reset DoS - CVE-2023-44487)": {
+      "text": "HIGH SEVERITY: HTTP/2 DoS flood targeting edge front-end container.",
+      "service": "front-end",
+      "cve": "CVE-2023-44487"
+    }
+  }
+}
