@@ -7,20 +7,65 @@ Auto-generates production-grade mitigation artifacts:
 4. Terraform Security Group Patch (HCL).
 """
 
-from typing import Any, Dict, List, Optional
 import json
+import re
+from typing import Any, Dict, List, Optional
 
 
 class RemediationGenerator:
     """Generates multi-cloud remediation artifacts based on blast radius graph evidence."""
 
     @staticmethod
-    def generate_k8s_network_policy(service_name: str, compromised_cve: str = "CVE-2024-3094") -> str:
+    def _sanitize_name(val: str, default: str = "service") -> str:
+        """Sanitizes service/node names to prevent command and template injection."""
+        if not val or not isinstance(val, str):
+            return default
+        # Allow alphanumeric, hyphen, underscore
+        sanitized = re.sub(r"[^a-zA-Z0-9_\-]", "", val).strip()
+        return sanitized[:64] if sanitized else default
+
+    @staticmethod
+    def _sanitize_cve(val: str, default: str = "CVE-2024-3094") -> str:
+        """Sanitizes CVE identifiers to standard CVE-YYYY-NNNN format or safe fallback."""
+        if not val or not isinstance(val, str):
+            return default
+        match = re.search(r"CVE-\d{4}-\d{4,8}", val, re.IGNORECASE)
+        if match:
+            return match.group(0).upper()
+        sanitized = re.sub(r"[^a-zA-Z0-9_\-]", "", val).strip()
+        return sanitized[:32] if sanitized else default
+
+    @staticmethod
+    def _sanitize_port(val: Any, default: int = 8443) -> int:
+        """Validates network port range."""
+        try:
+            port = int(val)
+            if 1 <= port <= 65535:
+                return port
+        except (ValueError, TypeError):
+            pass
+        return default
+
+    @staticmethod
+    def _sanitize_arn_or_role(val: str) -> str:
+        """Sanitizes AWS ARN or role name."""
+        if not val or not isinstance(val, str):
+            return "arn:aws:iam::123456789:role/AuthServiceRole"
+        sanitized = re.sub(r"[^a-zA-Z0-9_\-:/]", "", val).strip()[:128]
+        if sanitized.startswith("arn:aws:"):
+            return sanitized
+        role_part = re.sub(r"[^a-zA-Z0-9_\-]", "", sanitized)
+        return f"arn:aws:iam::123456789:role/{role_part or 'DefaultRole'}"
+
+    @classmethod
+    def generate_k8s_network_policy(cls, service_name: str, compromised_cve: str = "CVE-2024-3094") -> str:
         """Generates Kubernetes NetworkPolicy isolating the compromised service."""
-        pod_label = service_name.lower().replace("_", "-")
+        safe_service = cls._sanitize_name(service_name, "service")
+        safe_cve = cls._sanitize_cve(compromised_cve, "CVE-2024-3094")
+        pod_label = safe_service.lower().replace("_", "-")
         return f"""# ==============================================================================
 # NexTrace Autonomous Remediation: Kubernetes Isolation NetworkPolicy
-# Triggered by: {compromised_cve} on {service_name}
+# Triggered by: {safe_cve} on {safe_service}
 # Action: Immediate zero-trust quarantine - Deny all ingress & egress mesh traffic
 # ==============================================================================
 apiVersion: networking.k8s.io/v1
@@ -30,7 +75,7 @@ metadata:
   namespace: production
   labels:
     security.nextrace.io/quarantined: "true"
-    security.nextrace.io/cve: "{compromised_cve}"
+    security.nextrace.io/cve: "{safe_cve}"
 spec:
   podSelector:
     matchLabels:
@@ -51,14 +96,13 @@ spec:
       port: 5044
 """
 
-    @staticmethod
-    def generate_aws_iam_deny_policy(compromised_roles: List[str], crown_jewels: List[str]) -> str:
+    @classmethod
+    def generate_aws_iam_deny_policy(cls, compromised_roles: List[str], crown_jewels: List[str]) -> str:
         """Generates AWS IAM Deny Policy revoking privilege escalation."""
         role_arns = [
-            r if r.startswith("arn:aws:") else f"arn:aws:iam::123456789:role/{r}"
+            cls._sanitize_arn_or_role(r)
             for r in compromised_roles
         ] if compromised_roles else ["arn:aws:iam::123456789:role/AuthServiceRole"]
-        db_arns = [f"arn:aws:rds:us-east-1:123456789:db/{cj.lower()}" for cj in crown_jewels] if crown_jewels else ["arn:aws:rds:us-east-1:123456789:db/prodcustomerdb"]
 
         policy_dict = {
             "Version": "2012-10-17",
@@ -86,37 +130,41 @@ spec:
         }
         return json.dumps(policy_dict, indent=2)
 
-    @staticmethod
-    def generate_iptables_firewall_rule(service_name: str, compromised_port: int = 8443) -> str:
+    @classmethod
+    def generate_iptables_firewall_rule(cls, service_name: str, compromised_port: int = 8443) -> str:
         """Generates Linux iptables / nftables emergency blocking commands."""
+        safe_service = cls._sanitize_name(service_name, "service")
+        safe_port = cls._sanitize_port(compromised_port, 8443)
         return f"""#!/usr/bin/env bash
 # ==============================================================================
 # NexTrace Autonomous Remediation: Host Firewall Lockdown
-# Target: {service_name} (Port {compromised_port})
+# Target: {safe_service} (Port {safe_port})
 # ==============================================================================
 set -euo pipefail
 
-echo "[+] Initiating emergency host containment for {service_name}..."
+echo "[+] Initiating emergency host containment for {safe_service}..."
 
 # 1. Drop all established and incoming connections on service port
-sudo iptables -I INPUT 1 -p tcp --dport {compromised_port} -j DROP
-sudo iptables -I FORWARD 1 -p tcp --dport {compromised_port} -j DROP
+sudo iptables -I INPUT 1 -p tcp --dport {safe_port} -j DROP
+sudo iptables -I FORWARD 1 -p tcp --dport {safe_port} -j DROP
 
 # 2. Block outbound lateral sweeps to internal database subnets (10.0.0.0/16)
 sudo iptables -I OUTPUT 1 -d 10.0.2.0/24 -p tcp -m state --state NEW,ESTABLISHED -j REJECT --reject-with icmp-admin-prohibited
 
 # 3. Log containment enforcement
-logger -p auth.alert "[NexTrace Alert] Autonomous isolation rule active for {service_name}. Ingress and egress severed."
+logger -p auth.alert "[NexTrace Alert] Autonomous isolation rule active for {safe_service}. Ingress and egress severed."
 
 echo "[✓] Containment firewall rules applied successfully."
 """
 
-    @staticmethod
-    def generate_terraform_patch(service_name: str) -> str:
+    @classmethod
+    def generate_terraform_patch(cls, service_name: str) -> str:
         """Generates Terraform HCL security group patch."""
+        safe_service = cls._sanitize_name(service_name, "service")
+        safe_sg_identifier = re.sub(r"[^a-z0-9_]", "_", safe_service.lower())
         return f"""# ==============================================================================
 # NexTrace Terraform Security Group Containment Patch
-# Service: {service_name}
+# Service: {safe_service}
 # ==============================================================================
 resource "aws_security_group_rule" "quarantine_ingress_block" {{
   type              = "ingress"
@@ -124,7 +172,7 @@ resource "aws_security_group_rule" "quarantine_ingress_block" {{
   to_port           = 65535
   protocol          = "-1"
   cidr_blocks       = ["0.0.0.0/0"]
-  security_group_id = aws_security_group.{service_name.lower()}_sg.id
+  security_group_id = aws_security_group.{safe_sg_identifier}_sg.id
   description       = "NexTrace Automated Quarantine: Revoke all ingress until CVE patched"
 }}
 """
@@ -139,18 +187,24 @@ resource "aws_security_group_rule" "quarantine_ingress_block" {{
         exposed_crown_jewels: List[str]
     ) -> Dict[str, Any]:
         """Bundles all mitigation scripts into a unified structured report."""
-        k8s_yaml = cls.generate_k8s_network_policy(service_name, compromised_cve)
+        safe_service = cls._sanitize_name(service_name, "service")
+        safe_cve = cls._sanitize_cve(compromised_cve, "CVE-2024-3094")
+        k8s_yaml = cls.generate_k8s_network_policy(safe_service, safe_cve)
         iam_json = cls.generate_aws_iam_deny_policy(impacted_roles, exposed_crown_jewels)
-        iptables_sh = cls.generate_iptables_firewall_rule(service_name)
-        terraform_tf = cls.generate_terraform_patch(service_name)
+        iptables_sh = cls.generate_iptables_firewall_rule(safe_service)
+        terraform_tf = cls.generate_terraform_patch(safe_service)
+
+        safe_path = [cls._sanitize_name(str(p), "node") for p in (traversal_path or [])]
+        safe_roles = [cls._sanitize_arn_or_role(str(r)) for r in (impacted_roles or [])]
+        safe_cj = [cls._sanitize_name(str(c), "cj") for c in (exposed_crown_jewels or [])]
 
         return {
-            "service_name": service_name,
-            "compromised_cve": compromised_cve,
-            "attack_path_sequence": traversal_path,
-            "explainable_path": " -> ".join(traversal_path) if traversal_path else "None",
-            "impacted_roles": impacted_roles,
-            "exposed_crown_jewels": exposed_crown_jewels,
+            "service_name": safe_service,
+            "compromised_cve": safe_cve,
+            "attack_path_sequence": safe_path,
+            "explainable_path": " -> ".join(safe_path) if safe_path else "None",
+            "impacted_roles": safe_roles,
+            "exposed_crown_jewels": safe_cj,
             "k8s_network_policy_yaml": k8s_yaml,
             "aws_iam_deny_policy_json": iam_json,
             "host_iptables_script": iptables_sh,

@@ -26,8 +26,9 @@ class GraphInvestigatorQueries:
         Traverses downstream from compromised service across 1 to 4 hops
         using explicit variable-length Cypher query [:CALLS|DEPENDS_ON|CAN_ASSUME*1..4].
         """
+        safe_hops = max(1, min(int(max_hops), 10))
         cypher = (
-            f"MATCH path = (s {{name: '{service_name}'}})-[:CALLS|DEPENDS_ON|CAN_ASSUME|ACCESSES*1..{max_hops}]->(target) "
+            f"MATCH path = (s {{name: $service}})-[:CALLS|DEPENDS_ON|CAN_ASSUME|ACCESSES*1..{safe_hops}]->(target) "
             f"RETURN [n in nodes(path) | n.name] AS node_sequence, "
             f"length(path) AS depth, "
             f"target.name AS target_name, "
@@ -35,7 +36,7 @@ class GraphInvestigatorQueries:
             f"target.status AS target_status, "
             f"target.crown_jewel AS is_crown_jewel"
         )
-        raw_results = self.client.query(cypher, {"service": service_name, "max_hops": max_hops})
+        raw_results = self.client.query(cypher, {"service": str(service_name), "max_hops": safe_hops})
 
         downstream_services = []
         accessible_iam_roles = []
@@ -104,11 +105,22 @@ class GraphInvestigatorQueries:
         """
         active_attack_paths = []
         cypher = ""
+        params: Dict[str, Any] = {}
 
-        start_clause = f"{{name: '{entrypoint}'}}" if entrypoint else "{public_facing: true}"
-        end_clause = f"{{name: '{target_crown_jewel}'}}" if target_crown_jewel else "{crown_jewel: true}"
+        if entrypoint:
+            start_clause = "{name: $entrypoint}"
+            params["entrypoint"] = str(entrypoint)
+        else:
+            start_clause = "{public_facing: true}"
+
+        if target_crown_jewel:
+            end_clause = "{name: $target_crown_jewel}"
+            params["target_crown_jewel"] = str(target_crown_jewel)
+        else:
+            end_clause = "{crown_jewel: true}"
 
         if through_service:
+            params["through_service"] = str(through_service)
             # Check if through_service is itself a public-facing entrypoint
             is_entrypoint = False
             if entrypoint and entrypoint == through_service:
@@ -120,7 +132,7 @@ class GraphInvestigatorQueries:
 
             if is_entrypoint:
                 cypher = (
-                    f"MATCH (start {{name: '{through_service}'}}), (target {end_clause}) "
+                    f"MATCH (start {{name: $through_service}}), (target {end_clause}) "
                     f"WITH start, target, shortestPath((start)-[:CALLS|CAN_ASSUME|ACCESSES*..6]->(target)) AS p "
                     f"WHERE p IS NOT NULL "
                     f"RETURN [n in nodes(p) | n.name] AS path_nodes, "
@@ -129,12 +141,12 @@ class GraphInvestigatorQueries:
                     f"start.name AS entrypoint, "
                     f"target.name AS crown_jewel"
                 )
-                raw_results = self.client.query(cypher, {"through_service": through_service})
+                raw_results = self.client.query(cypher, params)
             else:
                 # Subpath concatenation via FalkorDB native shortestPath in WITH clauses:
                 # Ingress -> through_service, and through_service -> crown_jewel
                 cypher = (
-                    f"MATCH (start {start_clause}), (mid {{name: '{through_service}'}}) "
+                    f"MATCH (start {start_clause}), (mid {{name: $through_service}}) "
                     f"WITH start, mid, shortestPath((start)-[:CALLS|CAN_ASSUME|ACCESSES*..6]->(mid)) AS p1 "
                     f"WHERE p1 IS NOT NULL "
                     f"MATCH (mid), (target {end_clause}) "
@@ -148,7 +160,7 @@ class GraphInvestigatorQueries:
                     f"start.name AS entrypoint, "
                     f"target.name AS crown_jewel"
                 )
-                raw_results = self.client.query(cypher, {"through_service": through_service})
+                raw_results = self.client.query(cypher, params)
         else:
             cypher = (
                 f"MATCH (start {start_clause}), (target {end_clause}) "
@@ -160,7 +172,7 @@ class GraphInvestigatorQueries:
                 f"start.name AS entrypoint, "
                 f"target.name AS crown_jewel"
             )
-            raw_results = self.client.query(cypher)
+            raw_results = self.client.query(cypher, params)
 
         for row in raw_results:
             if not row:
@@ -214,11 +226,11 @@ class GraphInvestigatorQueries:
         Mutates the graph state by updating node properties to 'QUARANTINED'.
         """
         cypher = (
-            f"MATCH (s:Service {{name: '{service_name}'}}) "
-            f"SET s.status = 'QUARANTINED', s.quarantine_reason = '{reason}', s.quarantined_at = timestamp() "
-            f"RETURN s.name AS name, s.status AS status"
+            "MATCH (s:Service {name: $service}) "
+            "SET s.status = 'QUARANTINED', s.quarantine_reason = $reason, s.quarantined_at = timestamp() "
+            "RETURN s.name AS name, s.status AS status"
         )
-        raw_results = self.client.query(cypher, {"service": service_name, "reason": reason})
+        raw_results = self.client.query(cypher, {"service": str(service_name), "reason": str(reason)})
 
         # Also update in-memory graph
         if service_name in self.client._memory_graph:
@@ -248,22 +260,24 @@ class GraphInvestigatorQueries:
                     if to_target or edge_type in ["CALLS", "CAN_ASSUME"]:
                         severed_edges.append(f"{from_service} -> {tgt}")
 
+        params = {"from_service": str(from_service), "reason": str(reason)}
         if to_target:
+            params["to_target"] = str(to_target)
             cypher = (
-                f"MATCH (a {{name: '{from_service}'}})-[r]->(b {{name: '{to_target}'}}) "
-                f"SET r.status = 'SEVERED', r.severed_reason = '{reason}' "
-                f"DELETE r "
-                f"RETURN a.name AS from_node, b.name AS to_node"
+                "MATCH (a {name: $from_service})-[r]->(b {name: $to_target}) "
+                "SET r.status = 'SEVERED', r.severed_reason = $reason "
+                "DELETE r "
+                "RETURN a.name AS from_node, b.name AS to_node"
             )
         else:
             cypher = (
-                f"MATCH (a {{name: '{from_service}'}})-[r:CALLS|CAN_ASSUME]->(b) "
-                f"SET r.status = 'SEVERED', r.severed_reason = '{reason}' "
-                f"DELETE r "
-                f"RETURN count(r) AS severed_count"
+                "MATCH (a {name: $from_service})-[r:CALLS|CAN_ASSUME]->(b) "
+                "SET r.status = 'SEVERED', r.severed_reason = $reason "
+                "DELETE r "
+                "RETURN count(r) AS severed_count"
             )
 
-        raw_results = self.client.query(cypher)
+        raw_results = self.client.query(cypher, params)
 
         # If live FalkorDB was used, sync the memory mirror
         if self.client.is_connected():
@@ -307,7 +321,7 @@ class GraphInvestigatorQueries:
         raw_results = self.client.query(cypher)
         if not raw_results and hasattr(self.client, "_execute_memory_query"):
             raw_results = self.client._execute_memory_query(cypher)
-        bottlenecks = []
+        safe_top_k = max(1, min(int(top_k), 50))
         for row in raw_results:
             if not row or len(row) < 2:
                 continue
@@ -323,7 +337,7 @@ class GraphInvestigatorQueries:
                 "node_type": self.client._memory_graph.nodes.get(name, {}).get("label", "Node"),
                 "status": self.client._memory_graph.nodes.get(name, {}).get("status", "HEALTHY"),
             })
-            if len(bottlenecks) >= top_k:
+            if len(bottlenecks) >= safe_top_k:
                 break
 
         return {

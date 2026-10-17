@@ -5,6 +5,7 @@ and realistic attack exposure relationships.
 """
 
 import json
+import re
 from pathlib import Path
 
 NODES = [
@@ -1087,6 +1088,12 @@ def normalize_graph_json(data: dict):
     else:
         raw_nodes, raw_rels = [], []
 
+    # Apply strict safety limits to prevent memory exhaustion and DoS
+    MAX_NODES = 5000
+    MAX_RELS = 10000
+    raw_nodes = raw_nodes[:MAX_NODES]
+    raw_rels = raw_rels[:MAX_RELS]
+
     normalized_nodes = []
     normalized_rels = []
 
@@ -1103,7 +1110,8 @@ def normalize_graph_json(data: dict):
         if not isinstance(item, dict):
             continue
         nested_data = item.get("data", {}) if isinstance(item.get("data"), dict) else {}
-        label = item.get("label", item.get("type", nested_data.get("label", nested_data.get("type", "Service"))))
+        raw_label = item.get("label", item.get("type", nested_data.get("label", nested_data.get("type", "Service"))))
+        label = re.sub(r"[^A-Za-z0-9_]", "", str(raw_label))[:64] or "Service"
         props = dict(item.get("properties", {}))
 
         for k, v in nested_data.items():
@@ -1116,7 +1124,12 @@ def normalize_graph_json(data: dict):
         if "name" not in props:
             props["name"] = props.get("id", item.get("id", item.get("name", "UnknownNode")))
 
-        name_lower = str(props.get("name", "")).lower()
+        # Sanitize node name: truncate to 256 chars and remove control characters
+        raw_name = str(props.get("name", ""))[:256]
+        safe_name = re.sub(r"[\x00-\x1f\x7f]", "", raw_name) or "UnknownNode"
+        props["name"] = safe_name
+
+        name_lower = safe_name.lower()
         tier_lower = str(props.get("tier", "")).lower()
         if "public_facing" not in props:
             if not has_explicit_public:
@@ -1140,7 +1153,8 @@ def normalize_graph_json(data: dict):
         nested_data = item.get("data", {}) if isinstance(item.get("data"), dict) else {}
         from_node = item.get("from", item.get("source", item.get("from_node", nested_data.get("source", nested_data.get("from", "")))))
         to_node = item.get("to", item.get("target", item.get("to_node", nested_data.get("target", nested_data.get("to", "")))))
-        rel_type = item.get("rel", item.get("type", item.get("label", item.get("relationship", nested_data.get("label", nested_data.get("type", "CALLS"))))))
+        raw_rel_type = item.get("rel", item.get("type", item.get("label", item.get("relationship", nested_data.get("label", nested_data.get("type", "CALLS"))))))
+        rel_type = re.sub(r"[^A-Za-z0-9_]", "", str(raw_rel_type))[:64] or "CALLS"
         props = dict(item.get("props", item.get("properties", {})))
 
         for k, v in nested_data.items():
@@ -1151,10 +1165,12 @@ def normalize_graph_json(data: dict):
                 props[k] = v
 
         if from_node and to_node:
+            safe_from = re.sub(r"[\x00-\x1f\x7f]", "", str(from_node)[:256])
+            safe_to = re.sub(r"[\x00-\x1f\x7f]", "", str(to_node)[:256])
             normalized_rels.append({
-                "from": str(from_node),
+                "from": safe_from,
                 "rel": str(rel_type),
-                "to": str(to_node),
+                "to": safe_to,
                 "props": props
             })
 
@@ -1165,6 +1181,11 @@ def validate_graph_data(nodes, relationships):
     """Validates structural integrity of parsed graph nodes and relationships."""
     if not nodes:
         return False, "Graph must contain at least 1 node."
+    if len(nodes) > 5000:
+        return False, "Graph exceeds maximum allowed limit of 5,000 nodes."
+    if len(relationships) > 10000:
+        return False, "Graph exceeds maximum allowed limit of 10,000 relationships."
+
     node_names = set()
     for n in nodes:
         name = n.get("properties", {}).get("name")

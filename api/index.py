@@ -8,6 +8,10 @@ import sys
 import json
 import time
 import logging
+import re
+import ipaddress
+import socket
+from collections import OrderedDict
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 
@@ -44,18 +48,154 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# Enable CORS for local dev and Vercel frontend deployments
+# Enable CORS with restricted origin verification for local dev and Vercel frontend deployments
+cors_env = os.getenv("CORS_ALLOWED_ORIGINS", "")
+if cors_env.strip():
+    allowed_origins = [o.strip() for o in cors_env.split(",") if o.strip()]
+else:
+    allowed_origins = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "https://nex-trace.vercel.app",
+    ]
+
+# Restrict preview regex to nex-trace preview deployments rather than any arbitrary vercel subdomain
+cors_regex_env = os.getenv("CORS_ALLOWED_ORIGIN_REGEX", r"^https://(nex-trace|nextrace)(-[a-z0-9\-]+)?\.vercel\.app$")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
+    allow_origin_regex=cors_regex_env,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# In-memory global client fallback
-_default_client = FalkorDBClient()
-_client_cache: Dict[tuple, FalkorDBClient] = {}
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    logger.error("Unhandled server exception on %s: %s", request.url.path, _sanitize_error_message(exc))
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An internal error occurred during graph processing."}
+    )
+
+
+# In-memory session client cache for guest and user isolation
+class SessionClientCache:
+    """Manages isolated in-memory FalkorDBClient instances per guest session."""
+
+    def __init__(self, max_sessions: int = 200):
+        self.max_sessions = max_sessions
+        self._cache: OrderedDict[str, FalkorDBClient] = OrderedDict()
+
+    @staticmethod
+    def sanitize_session_id(session_id: Optional[str]) -> str:
+        if not session_id:
+            return ""
+        return re.sub(r"[^a-zA-Z0-9_\-]", "", str(session_id))[:64]
+
+    def get(self, session_id: Optional[str]) -> FalkorDBClient:
+        safe_id = self.sanitize_session_id(session_id)
+        if not safe_id:
+            # Ephemeral isolated client for anonymous requests without session header
+            # so anonymous users do not pollute each other's state
+            return FalkorDBClient()
+        if safe_id in self._cache:
+            self._cache.move_to_end(safe_id)
+            return self._cache[safe_id]
+        if len(self._cache) >= self.max_sessions:
+            self._cache.popitem(last=False)
+        client = FalkorDBClient()
+        self._cache[safe_id] = client
+        return client
+
+
+_session_clients = SessionClientCache()
+_client_cache: OrderedDict[tuple, FalkorDBClient] = OrderedDict()
+
+
+def _sanitize_error_message(err: Any, password: Optional[str] = None) -> str:
+    """Redacts credentials, private keys, and server filesystem paths from error messages."""
+    msg = str(err)
+    msg = re.sub(r"://([^:@\s]+):([^@\s]+)@", r"://\1:******@", msg)
+    if password:
+        msg = msg.replace(str(password), "******")
+    msg = re.sub(r"gsk_[a-zA-Z0-9]{20,}", "gsk_******", msg)
+    msg = re.sub(r"AIzaSy[a-zA-Z0-9_-]{33}", "AIzaSy******", msg)
+    msg = re.sub(r"sk-[a-zA-Z0-9]{20,}", "sk-******", msg)
+    msg = re.sub(r"[a-zA-Z]:\\[^\s:;,]+", "[REDACTED_PATH]", msg)
+    msg = re.sub(r"/(?:Users|home|root|app|var|tmp)/[^\s:;,]+", "[REDACTED_PATH]", msg)
+    return msg[:200]
+
+
+BLOCKED_SSRF_HOSTS = {
+    "169.254.169.254",
+    "169.254.170.2",
+    "metadata.google.internal",
+    "metadata.internal",
+    "100.100.100.200",
+    "instance-data",
+}
+
+
+def _check_ip_safety(ip_obj: Any):
+    """Verifies that an IP address is not link-local, multicast, unspecified, or cloud metadata."""
+    if isinstance(ip_obj, ipaddress.IPv6Address) and ip_obj.ipv4_mapped:
+        ip_obj = ip_obj.ipv4_mapped
+
+    if ip_obj.is_link_local:
+        raise HTTPException(status_code=400, detail="Target host resolves to restricted link-local address.")
+    if ip_obj.is_multicast:
+        raise HTTPException(status_code=400, detail="Target host resolves to restricted multicast address.")
+    if ip_obj.is_unspecified:
+        raise HTTPException(status_code=400, detail="Target host resolves to restricted unspecified address.")
+    if str(ip_obj) in BLOCKED_SSRF_HOSTS:
+        raise HTTPException(status_code=400, detail="Target host is restricted.")
+
+
+def _validate_host_safety(host: Optional[str]):
+    """Validates target host against SSRF, cloud metadata services, and DNS rebinding."""
+    if not host:
+        return
+    clean_host = host.strip().lower()
+    if not clean_host:
+        return
+
+    # Reject protocol prefixes, user info, paths, and control chars
+    if any(c in clean_host for c in [" ", "\t", "\r", "\n", "/", "\\", "@", ";", "?"]) or clean_host.startswith("http:") or clean_host.startswith("https:"):
+        raise HTTPException(status_code=400, detail="Invalid host format.")
+
+    bare_host = clean_host.strip("[]")
+    if bare_host in BLOCKED_SSRF_HOSTS:
+        raise HTTPException(status_code=400, detail="Target host is restricted.")
+
+    if "169.254." in bare_host or "metadata" in bare_host or "100.100.100.200" in bare_host:
+        raise HTTPException(status_code=400, detail="Target host is restricted.")
+
+    # Direct IP check (handles IPv4, IPv6, and IPv4-mapped IPv6)
+    try:
+        ip = ipaddress.ip_address(bare_host)
+        _check_ip_safety(ip)
+        return
+    except ValueError:
+        pass
+
+    # Resolve domain names to detect DNS rebinding or .nip.io domains mapping to metadata
+    try:
+        addr_info = socket.getaddrinfo(bare_host, None, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM)
+        for _, _, _, _, sockaddr in addr_info:
+            resolved_ip_str = sockaddr[0]
+            try:
+                resolved_ip = ipaddress.ip_address(resolved_ip_str)
+                _check_ip_safety(resolved_ip)
+            except ValueError:
+                pass
+    except socket.gaierror:
+        if not re.match(r"^[a-zA-Z0-9_\-\.]+$", bare_host):
+            raise HTTPException(status_code=400, detail="Invalid hostname format.")
 
 
 def get_client_from_request(
@@ -64,24 +204,34 @@ def get_client_from_request(
     falkor_user: Optional[str] = None,
     falkor_pass: Optional[str] = None,
     falkor_ssl: Optional[bool] = None,
+    session_id: Optional[str] = None,
 ) -> FalkorDBClient:
-    """Creates or retrieves a custom FalkorDBClient if custom credentials provided, or returns default client."""
+    """Creates or retrieves custom FalkorDBClient if custom credentials provided, or returns isolated session client."""
     if falkor_host:
-        key = (falkor_host.strip(), int(falkor_port or 6379), falkor_user or "", falkor_pass or "", bool(falkor_ssl))
+        _validate_host_safety(falkor_host)
+        port = int(falkor_port or 6379)
+        if not (1 <= port <= 65535):
+            raise HTTPException(status_code=400, detail="Port out of valid range (1-65535).")
+        safe_sid = _session_clients.sanitize_session_id(session_id)
+        key = (safe_sid, falkor_host.strip().lower(), port, falkor_user or "", falkor_pass or "", bool(falkor_ssl))
         if key not in _client_cache:
+            if len(_client_cache) >= 100:
+                _client_cache.popitem(last=False)
             try:
                 _client_cache[key] = FalkorDBClient(
                     host=falkor_host,
-                    port=int(falkor_port or 6379),
+                    port=port,
                     username=falkor_user,
                     password=falkor_pass,
                     ssl=bool(falkor_ssl)
                 )
             except Exception as e:
-                logger.warning("Failed to connect to custom FalkorDB: %s. Using default client mirror.", e)
-                return _default_client
+                logger.warning("Failed to connect to custom FalkorDB: %s. Using session client mirror.", _sanitize_error_message(e, falkor_pass))
+                return _session_clients.get(session_id)
+        else:
+            _client_cache.move_to_end(key)
         return _client_cache[key]
-    return _default_client
+    return _session_clients.get(session_id)
 
 
 # ==============================================================================
@@ -89,15 +239,15 @@ def get_client_from_request(
 # ==============================================================================
 
 class FalkorConfig(BaseModel):
-    host: Optional[str] = None
-    port: Optional[int] = 6379
-    username: Optional[str] = None
-    password: Optional[str] = None
+    host: Optional[str] = Field(None, max_length=255)
+    port: Optional[int] = Field(6379, ge=1, le=65535)
+    username: Optional[str] = Field(None, max_length=128)
+    password: Optional[str] = Field(None, max_length=256)
     ssl: Optional[bool] = False
 
 
 class SeedRequest(BaseModel):
-    preset_id: Optional[str] = "fintech_enterprise"
+    preset_id: Optional[str] = Field("fintech_enterprise", max_length=64)
     nodes: Optional[List[Dict[str, Any]]] = None
     relationships: Optional[List[Dict[str, Any]]] = None
     raw_graph: Optional[Dict[str, Any]] = None
@@ -106,39 +256,39 @@ class SeedRequest(BaseModel):
 
 
 class InvestigateRequest(BaseModel):
-    alert_text: str
-    target_service: Optional[str] = None
-    cve_id: Optional[str] = None
-    max_hops: int = 4
-    preset_id: Optional[str] = None
+    alert_text: str = Field(..., max_length=5000)
+    target_service: Optional[str] = Field(None, max_length=256)
+    cve_id: Optional[str] = Field(None, max_length=64)
+    max_hops: int = Field(4, ge=1, le=10)
+    preset_id: Optional[str] = Field(None, max_length=64)
     nodes: Optional[List[Dict[str, Any]]] = None
     relationships: Optional[List[Dict[str, Any]]] = None
     raw_graph: Optional[Dict[str, Any]] = None
-    model: Optional[str] = "llama-3.3-70b-versatile"
-    groq_api_key: Optional[str] = None
-    gemini_api_key: Optional[str] = None
-    openai_api_key: Optional[str] = None
+    model: Optional[str] = Field("llama-3.3-70b-versatile", max_length=128)
+    groq_api_key: Optional[str] = Field(None, max_length=256)
+    gemini_api_key: Optional[str] = Field(None, max_length=256)
+    openai_api_key: Optional[str] = Field(None, max_length=256)
     falkordb: Optional[FalkorConfig] = None
 
 
 class ChatMessage(BaseModel):
-    role: str
-    content: str
+    role: str = Field(..., max_length=32)
+    content: str = Field(..., max_length=10000)
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(..., max_length=5000)
     history: Optional[List[ChatMessage]] = Field(default_factory=list)
-    preset_id: Optional[str] = None
+    preset_id: Optional[str] = Field(None, max_length=64)
     nodes: Optional[List[Dict[str, Any]]] = None
     relationships: Optional[List[Dict[str, Any]]] = None
     raw_graph: Optional[Dict[str, Any]] = None
-    target_service: Optional[str] = None
-    cve_id: Optional[str] = None
-    model: Optional[str] = "llama-3.3-70b-versatile"
-    groq_api_key: Optional[str] = None
-    gemini_api_key: Optional[str] = None
-    openai_api_key: Optional[str] = None
+    target_service: Optional[str] = Field(None, max_length=256)
+    cve_id: Optional[str] = Field(None, max_length=64)
+    model: Optional[str] = Field("llama-3.3-70b-versatile", max_length=128)
+    groq_api_key: Optional[str] = Field(None, max_length=256)
+    gemini_api_key: Optional[str] = Field(None, max_length=256)
+    openai_api_key: Optional[str] = Field(None, max_length=256)
     falkordb: Optional[FalkorConfig] = None
 
 
@@ -154,6 +304,7 @@ def health_check(
     x_falkordb_username: Optional[str] = Header(None),
     x_falkordb_password: Optional[str] = Header(None),
     x_falkordb_ssl: Optional[str] = Header(None),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
 ):
     client = get_client_from_request(
         falkor_host=x_falkordb_host,
@@ -161,6 +312,7 @@ def health_check(
         falkor_user=x_falkordb_username,
         falkor_pass=x_falkordb_password,
         falkor_ssl=(x_falkordb_ssl.lower() == "true") if x_falkordb_ssl else None,
+        session_id=x_session_id,
     )
     is_live = client.is_connected()
     return {
@@ -237,8 +389,17 @@ def get_preset_detail(preset_id: str):
 
 @app.get("/api/samples/{filename}")
 def get_sample_file(filename: str):
-    """Returns downloadable sample JSON graph file."""
+    """Returns downloadable sample JSON graph file with path traversal protection."""
+    if not re.match(r"^[a-zA-Z0-9_\-]+\.json$", filename):
+        raise HTTPException(status_code=400, detail="Invalid sample filename. Only alphanumeric .json filenames are permitted.")
+
     safe_name = os.path.basename(filename)
+    allowed_roots = [
+        (backend_dir / "sample_graphs").resolve(),
+        (backend_dir.parent / "sample_graphs").resolve(),
+        (backend_dir.parent / "frontend" / "public" / "samples").resolve(),
+    ]
+
     candidates = [
         backend_dir / "sample_graphs" / safe_name,
         backend_dir.parent / "sample_graphs" / safe_name,
@@ -259,9 +420,14 @@ def get_sample_file(filename: str):
 
     sample_path = None
     for p in candidates:
-        if p.exists():
-            sample_path = p
-            break
+        try:
+            resolved = p.resolve()
+            # Verify resolved path is strictly within an allowed root
+            if any(resolved == root or (root in resolved.parents) for root in allowed_roots) and resolved.is_file():
+                sample_path = resolved
+                break
+        except Exception:
+            continue
 
     if not sample_path:
         raise HTTPException(status_code=404, detail=f"Sample file '{filename}' not found.")
@@ -276,13 +442,18 @@ def get_sample_file(filename: str):
 
 @app.post("/api/test-connection")
 def test_falkordb_connection(config: FalkorConfig):
-    """Tests connection to a FalkorDB instance."""
+    """Tests connection to a FalkorDB instance with SSRF protection and credential scrubbing."""
+    _validate_host_safety(config.host)
+    port = config.port or 6379
+    if not (1 <= port <= 65535):
+        raise HTTPException(status_code=400, detail="Port out of valid range (1-65535).")
+
     start = time.time()
     try:
         from falkordb import FalkorDB
         driver = FalkorDB(
             host=config.host or "localhost",
-            port=config.port or 6379,
+            port=port,
             username=config.username,
             password=config.password,
             ssl=config.ssl or False,
@@ -292,16 +463,18 @@ def test_falkordb_connection(config: FalkorConfig):
         g = driver.select_graph("nextrace_test")
         g.query("RETURN 1 AS ping")
         latency = round((time.time() - start) * 1000, 2)
+        safe_host = re.sub(r"[^\w\.-]", "", config.host or "localhost")
         return {
             "connected": True,
-            "message": f"Successfully connected to FalkorDB at {config.host}:{config.port}!",
+            "message": f"Successfully connected to FalkorDB at {safe_host}:{port}!",
             "latency_ms": latency
         }
     except Exception as e:
         latency = round((time.time() - start) * 1000, 2)
+        err_msg = _sanitize_error_message(e, config.password)
         return {
             "connected": False,
-            "message": f"Connection failed: {str(e)}",
+            "message": f"Connection failed: {err_msg}",
             "latency_ms": latency
         }
 
@@ -318,50 +491,58 @@ def seed_graph(
     x_falkordb_username: Optional[str] = Header(None),
     x_falkordb_password: Optional[str] = Header(None),
     x_falkordb_ssl: Optional[str] = Header(None),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
 ):
     """Seeds FalkorDB and in-memory graph with preset or uploaded custom JSON graph."""
-    falkor = req.falkordb or FalkorConfig()
-    client = get_client_from_request(
-        falkor_host=falkor.host or x_falkordb_host,
-        falkor_port=falkor.port or (int(x_falkordb_port) if x_falkordb_port else None),
-        falkor_user=falkor.username or x_falkordb_username,
-        falkor_pass=falkor.password or x_falkordb_password,
-        falkor_ssl=falkor.ssl if falkor.ssl is not None else ((x_falkordb_ssl.lower() == "true") if x_falkordb_ssl else False),
-    )
+    try:
+        falkor = req.falkordb or FalkorConfig()
+        client = get_client_from_request(
+            falkor_host=falkor.host or x_falkordb_host,
+            falkor_port=falkor.port or (int(x_falkordb_port) if x_falkordb_port else None),
+            falkor_user=falkor.username or x_falkordb_username,
+            falkor_pass=falkor.password or x_falkordb_password,
+            falkor_ssl=falkor.ssl if falkor.ssl is not None else ((x_falkordb_ssl.lower() == "true") if x_falkordb_ssl else False),
+            session_id=x_session_id,
+        )
 
-    if req.raw_graph:
-        nodes, rels = normalize_graph_json(req.raw_graph)
-        res = client.seed_database(custom_nodes=nodes, custom_relationships=rels, force=req.force)
+        if req.raw_graph:
+            nodes, rels = normalize_graph_json(req.raw_graph)
+            res = client.seed_database(custom_nodes=nodes, custom_relationships=rels, force=req.force)
+            return {
+                "status": "success",
+                "preset": "custom",
+                "nodes_count": len(nodes),
+                "relationships_count": len(rels),
+                "falkordb_connected": client.is_connected(),
+                "falkordb_seeded": res.get("falkordb_seeded", False),
+            }
+
+        if req.nodes is not None and req.relationships is not None:
+            res = client.seed_database(custom_nodes=req.nodes, custom_relationships=req.relationships, force=req.force)
+            return {
+                "status": "success",
+                "preset": "custom",
+                "nodes_count": len(req.nodes),
+                "relationships_count": len(req.relationships),
+                "falkordb_connected": client.is_connected(),
+                "falkordb_seeded": res.get("falkordb_seeded", False),
+            }
+
+        preset_name = req.preset_id or "fintech_enterprise"
+        res = client.seed_database(preset_name=preset_name, force=req.force)
         return {
             "status": "success",
-            "preset": "custom",
-            "nodes_count": len(nodes),
-            "relationships_count": len(rels),
+            "preset": preset_name,
+            "nodes_count": res.get("total_nodes", 0),
+            "relationships_count": res.get("total_relationships", 0),
             "falkordb_connected": client.is_connected(),
             "falkordb_seeded": res.get("falkordb_seeded", False),
         }
-
-    if req.nodes is not None and req.relationships is not None:
-        res = client.seed_database(custom_nodes=req.nodes, custom_relationships=req.relationships, force=req.force)
-        return {
-            "status": "success",
-            "preset": "custom",
-            "nodes_count": len(req.nodes),
-            "relationships_count": len(req.relationships),
-            "falkordb_connected": client.is_connected(),
-            "falkordb_seeded": res.get("falkordb_seeded", False),
-        }
-
-    preset_name = req.preset_id or "fintech_enterprise"
-    res = client.seed_database(preset_name=preset_name, force=req.force)
-    return {
-        "status": "success",
-        "preset": preset_name,
-        "nodes_count": res.get("total_nodes", 0),
-        "relationships_count": res.get("total_relationships", 0),
-        "falkordb_connected": client.is_connected(),
-        "falkordb_seeded": res.get("falkordb_seeded", False),
-    }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to seed graph: %s", _sanitize_error_message(e, (req.falkordb.password if req.falkordb else None) or x_falkordb_password))
+        raise HTTPException(status_code=500, detail="Failed to seed graph due to an internal error.")
 
 
 # ==============================================================================
@@ -379,46 +560,54 @@ def run_investigation(
     x_falkordb_username: Optional[str] = Header(None),
     x_falkordb_password: Optional[str] = Header(None),
     x_falkordb_ssl: Optional[str] = Header(None),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
 ):
     """Executes the end-to-end 5-step autonomous investigation and severance pipeline."""
-    falkor = req.falkordb or FalkorConfig()
-    client = get_client_from_request(
-        falkor_host=falkor.host or x_falkordb_host,
-        falkor_port=falkor.port or (int(x_falkordb_port) if x_falkordb_port else None),
-        falkor_user=falkor.username or x_falkordb_username,
-        falkor_pass=falkor.password or x_falkordb_password,
-        falkor_ssl=falkor.ssl if falkor.ssl is not None else ((x_falkordb_ssl.lower() == "true") if x_falkordb_ssl else False),
-    )
+    try:
+        falkor = req.falkordb or FalkorConfig()
+        client = get_client_from_request(
+            falkor_host=falkor.host or x_falkordb_host,
+            falkor_port=falkor.port or (int(x_falkordb_port) if x_falkordb_port else None),
+            falkor_user=falkor.username or x_falkordb_username,
+            falkor_pass=falkor.password or x_falkordb_password,
+            falkor_ssl=falkor.ssl if falkor.ssl is not None else ((x_falkordb_ssl.lower() == "true") if x_falkordb_ssl else False),
+            session_id=x_session_id,
+        )
 
-    # Seed custom nodes or raw graph if provided
-    if req.raw_graph:
-        nodes, rels = normalize_graph_json(req.raw_graph)
-        client.seed_database(custom_nodes=nodes, custom_relationships=rels, force=True)
-    elif req.nodes is not None and req.relationships is not None:
-        client.seed_database(custom_nodes=req.nodes, custom_relationships=req.relationships, force=True)
-    elif req.preset_id and req.preset_id != client._active_preset:
-        client.seed_database(preset_name=req.preset_id, force=True)
+        # Seed custom nodes or raw graph if provided
+        if req.raw_graph:
+            nodes, rels = normalize_graph_json(req.raw_graph)
+            client.seed_database(custom_nodes=nodes, custom_relationships=rels, force=True)
+        elif req.nodes is not None and req.relationships is not None:
+            client.seed_database(custom_nodes=req.nodes, custom_relationships=req.relationships, force=True)
+        elif req.preset_id and req.preset_id != client._active_preset:
+            client.seed_database(preset_name=req.preset_id, force=True)
 
-    groq_key = req.groq_api_key or x_groq_api_key or os.getenv("GROQ_API_KEY", "")
-    gemini_key = req.gemini_api_key or x_gemini_api_key or os.getenv("GEMINI_API_KEY", "")
-    openai_key = req.openai_api_key or x_openai_api_key or os.getenv("OPENAI_API_KEY", "")
+        groq_key = req.groq_api_key or x_groq_api_key or os.getenv("GROQ_API_KEY", "")
+        gemini_key = req.gemini_api_key or x_gemini_api_key or os.getenv("GEMINI_API_KEY", "")
+        openai_key = req.openai_api_key or x_openai_api_key or os.getenv("OPENAI_API_KEY", "")
 
-    investigator = AutonomousInvestigator(
-        api_key=groq_key,
-        model=req.model or "llama-3.3-70b-versatile",
-        client=client,
-        groq_api_key=groq_key,
-        gemini_api_key=gemini_key,
-        openai_api_key=openai_key,
-    )
+        investigator = AutonomousInvestigator(
+            api_key=groq_key,
+            model=req.model or "llama-3.3-70b-versatile",
+            client=client,
+            groq_api_key=groq_key,
+            gemini_api_key=gemini_key,
+            openai_api_key=openai_key,
+        )
 
-    result = investigator.run_investigation(
-        alert_text=req.alert_text,
-        target_service=req.target_service,
-        cve_id=req.cve_id,
-        max_hops=req.max_hops
-    )
-    return result
+        result = investigator.run_investigation(
+            alert_text=req.alert_text,
+            target_service=req.target_service,
+            cve_id=req.cve_id,
+            max_hops=req.max_hops
+        )
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Investigation failed: %s", _sanitize_error_message(e))
+        raise HTTPException(status_code=500, detail="Investigation pipeline failed due to an internal error.")
 
 
 # ==============================================================================
@@ -436,6 +625,7 @@ def chat_agent(
     x_falkordb_username: Optional[str] = Header(None),
     x_falkordb_password: Optional[str] = Header(None),
     x_falkordb_ssl: Optional[str] = Header(None),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
 ):
     """
     Conversational AI Agent Endpoint mimicking Google Gemini.
@@ -443,14 +633,16 @@ def chat_agent(
     and returns rich markdown with horizontal cyber kill-chain cards, explainable path proofs,
     blast radius statistics, and expandable Cypher/MCP execution logs.
     """
-    falkor = req.falkordb or FalkorConfig()
-    client = get_client_from_request(
-        falkor_host=falkor.host or x_falkordb_host,
-        falkor_port=falkor.port or (int(x_falkordb_port) if x_falkordb_port else None),
-        falkor_user=falkor.username or x_falkordb_username,
-        falkor_pass=falkor.password or x_falkordb_password,
-        falkor_ssl=falkor.ssl if falkor.ssl is not None else ((x_falkordb_ssl.lower() == "true") if x_falkordb_ssl else False),
-    )
+    try:
+        falkor = req.falkordb or FalkorConfig()
+        client = get_client_from_request(
+            falkor_host=falkor.host or x_falkordb_host,
+            falkor_port=falkor.port or (int(x_falkordb_port) if x_falkordb_port else None),
+            falkor_user=falkor.username or x_falkordb_username,
+            falkor_pass=falkor.password or x_falkordb_password,
+            falkor_ssl=falkor.ssl if falkor.ssl is not None else ((x_falkordb_ssl.lower() == "true") if x_falkordb_ssl else False),
+            session_id=x_session_id,
+        )
 
     groq_key = req.groq_api_key or x_groq_api_key or os.getenv("GROQ_API_KEY", "")
     gemini_key = req.gemini_api_key or x_gemini_api_key or os.getenv("GEMINI_API_KEY", "")
@@ -827,21 +1019,26 @@ I'm ready to investigate your cloud infrastructure.
 
 You can click any suggested scenario below, or upload your own cloud architecture JSON using the **`+`** button to begin."""
 
-    return {
-        "reply": reply_markdown,
-        "is_investigation": False,
-        "nodes_count": nodes_count,
-        "relationships_count": rels_count,
-        "entrypoints": entrypoints,
-        "crown_jewels": crown_jewels,
-        "suggested_followups": [
-            f"Simulate CVE-2024-3094 RCE on {entrypoints[0] if entrypoints else 'ingress'}",
-            "Find shortest path to crown jewel database",
-            "Calculate critical bottleneck chokepoints",
-            "Import a new JSON topology"
-        ],
-        "model_used": req.model or "llama-3.3-70b-versatile"
-    }
+        return {
+            "reply": reply_markdown,
+            "is_investigation": False,
+            "nodes_count": nodes_count,
+            "relationships_count": rels_count,
+            "entrypoints": entrypoints,
+            "crown_jewels": crown_jewels,
+            "suggested_followups": [
+                f"Simulate CVE-2024-3094 RCE on {entrypoints[0] if entrypoints else 'ingress'}",
+                "Find shortest path to crown jewel database",
+                "Calculate critical bottleneck chokepoints",
+                "Import a new JSON topology"
+            ],
+            "model_used": req.model or "llama-3.3-70b-versatile"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Chat agent error: %s", _sanitize_error_message(e))
+        raise HTTPException(status_code=500, detail="Chat processing failed due to an internal error.")
 
 
 if __name__ == "__main__":

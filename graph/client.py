@@ -6,6 +6,7 @@ and an in-memory graph fallback mirror for resilient offline/hybrid operation.
 
 import time
 import logging
+import re
 from typing import Any, Dict, List, Optional
 import networkx as nx
 
@@ -146,6 +147,13 @@ class FalkorDBClient:
         if custom_relationships is not None and relationships is None:
             relationships = custom_relationships
 
+        MAX_NODES = 5000
+        MAX_RELS = 10000
+        if nodes is not None:
+            nodes = nodes[:MAX_NODES]
+        if relationships is not None:
+            relationships = relationships[:MAX_RELS]
+
         if nodes is not None and relationships is not None:
             self._active_preset = "custom"
             self._current_nodes = list(nodes)
@@ -190,54 +198,51 @@ class FalkorDBClient:
                         pass
                     self.graph = self.driver.select_graph(self.graph_name)
 
-                # Batch create nodes
+                # Batch create nodes with full parameterization
                 for node in self._current_nodes:
-                    label = node.get("label", "Node")
+                    raw_label = str(node.get("label", "Node"))
+                    safe_label = re.sub(r"[^A-Za-z0-9_]", "", raw_label) or "Node"
                     props = dict(node.get("properties", {}))
                     if "name" not in props and "name" in node:
                         props["name"] = node["name"]
-                    prop_strs = []
+                    clean_props = {}
                     for k, v in props.items():
-                        if isinstance(v, str):
-                            escaped = v.replace("'", "\\'")
-                            prop_strs.append(f"{k}: '{escaped}'")
-                        elif isinstance(v, bool):
-                            prop_strs.append(f"{k}: {'true' if v else 'false'}")
-                        elif isinstance(v, (int, float)):
-                            prop_strs.append(f"{k}: {v}")
-                    props_cypher = "{" + ", ".join(prop_strs) + "}"
-                    cypher = f"CREATE (n:{label} {props_cypher})"
-                    self.graph.query(cypher)
+                        safe_k = re.sub(r"[^A-Za-z0-9_]", "", str(k))
+                        if safe_k:
+                            clean_props[safe_k] = v
+                    if clean_props:
+                        cypher = f"CREATE (n:{safe_label}) SET n += $props"
+                        self.graph.query(cypher, {"props": clean_props})
+                    else:
+                        cypher = f"CREATE (n:{safe_label})"
+                        self.graph.query(cypher)
                     nodes_created += 1
 
-                # Create relationships
+                # Create relationships with full parameterization
                 for edge in self._current_relationships:
-                    from_node = edge.get("from") or edge.get("source") or ""
-                    to_node = edge.get("to") or edge.get("target") or ""
-                    from_escaped = str(from_node).replace("'", "\\'")
-                    to_escaped = str(to_node).replace("'", "\\'")
-                    rel_type = edge.get("rel") or edge.get("type") or "CALLS"
+                    from_node = str(edge.get("from") or edge.get("source") or "")
+                    to_node = str(edge.get("to") or edge.get("target") or "")
+                    raw_rel = str(edge.get("rel") or edge.get("type") or "CALLS")
+                    safe_rel = re.sub(r"[^A-Za-z0-9_]", "", raw_rel) or "CALLS"
                     props = edge.get("props") or edge.get("properties") or {}
-                    prop_strs = []
-                    for k, v in props.items():
-                        if isinstance(v, str):
-                            escaped = v.replace("'", "\\'")
-                            prop_strs.append(f"{k}: '{escaped}'")
-                        elif isinstance(v, bool):
-                            prop_strs.append(f"{k}: {'true' if v else 'false'}")
-                        elif isinstance(v, (int, float)):
-                            prop_strs.append(f"{k}: {v}")
-                        elif isinstance(v, list):
-                            escaped_items = [f"'{str(x).replace(chr(39), chr(92) + chr(39))}'" for x in v]
-                            arr_str = "[" + ", ".join(escaped_items) + "]"
-                            prop_strs.append(f"{k}: {arr_str}")
-                    props_cypher = " {" + ", ".join(prop_strs) + "}" if prop_strs else ""
-
-                    cypher = (
-                        f"MATCH (a {{name: '{from_escaped}'}}), (b {{name: '{to_escaped}'}}) "
-                        f"CREATE (a)-[r:{rel_type}{props_cypher}]->(b)"
-                    )
-                    self.graph.query(cypher)
+                    clean_props = {}
+                    if isinstance(props, dict):
+                        for k, v in props.items():
+                            safe_k = re.sub(r"[^A-Za-z0-9_]", "", str(k))
+                            if safe_k:
+                                clean_props[safe_k] = v
+                    if clean_props:
+                        cypher = (
+                            f"MATCH (a {{name: $from_node}}), (b {{name: $to_node}}) "
+                            f"CREATE (a)-[r:{safe_rel}]->(b) SET r += $props"
+                        )
+                        self.graph.query(cypher, {"from_node": from_node, "to_node": to_node, "props": clean_props})
+                    else:
+                        cypher = (
+                            f"MATCH (a {{name: $from_node}}), (b {{name: $to_node}}) "
+                            f"CREATE (a)-[r:{safe_rel}]->(b)"
+                        )
+                        self.graph.query(cypher, {"from_node": from_node, "to_node": to_node})
                     rels_created += 1
 
                 falkor_success = True
@@ -298,34 +303,42 @@ class FalkorDBClient:
         # 2. shortestPath() algorithm (check next so variable-length hops do not intercept)
         if "SHORTESTPATH" in cypher_upper:
             import re
-            ep_match = re.search(r"start(?::\w+)?\s*\{name:\s*['\"]([^'\"]+)['\"]\}", cypher)
-            target_match = re.search(r"target(?::\w+)?\s*\{name:\s*['\"]([^'\"]+)['\"]\}", cypher)
+            ep_val = params.get("entrypoint") if params else None
+            if not ep_val:
+                ep_match = re.search(r"start(?::\w+)?\s*\{name:\s*(?:\$entrypoint|['\"]([^'\"]+)['\"])\}", cypher)
+                if ep_match and ep_match.group(1):
+                    ep_val = ep_match.group(1)
 
-            # Check for through_service in WHERE clause, mid node, or params
-            through_service = None
-            through_match = re.search(r"n\.name\s*=\s*['\"]([^'\"]+)['\"]", cypher)
-            if through_match:
-                through_service = through_match.group(1)
-            else:
-                mid_match = re.search(r"mid(?::\w+)?\s*\{name:\s*['\"]([^'\"]+)['\"]\}", cypher)
-                if mid_match:
-                    through_service = mid_match.group(1)
-            if not through_service and params and "through_service" in params:
-                through_service = params["through_service"]
+            target_val = params.get("target_crown_jewel") if params else None
+            if not target_val:
+                target_match = re.search(r"target(?::\w+)?\s*\{name:\s*(?:\$target_crown_jewel|['\"]([^'\"]+)['\"])\}", cypher)
+                if target_match and target_match.group(1):
+                    target_val = target_match.group(1)
 
-            if ep_match:
-                entrypoints = [ep_match.group(1)]
+            # Check for through_service in params, WHERE clause, or mid node
+            through_service = params.get("through_service") if params else None
+            if not through_service:
+                through_match = re.search(r"n\.name\s*=\s*['\"]([^'\"]+)['\"]", cypher)
+                if through_match:
+                    through_service = through_match.group(1)
+                else:
+                    mid_match = re.search(r"(?:mid|start)(?::\w+)?\s*\{name:\s*(?:\$through_service|['\"]([^'\"]+)['\"])\}", cypher)
+                    if mid_match and mid_match.group(1):
+                        through_service = mid_match.group(1)
+
+            if ep_val:
+                entrypoints = [ep_val]
             else:
                 entrypoints = [n for n, d in self._memory_graph.nodes(data=True) if d.get("public_facing") is True]
                 if not entrypoints:
                     entrypoints = [n for n in self._memory_graph.nodes if self._memory_graph.in_degree(n) == 0] or list(self._memory_graph.nodes)[:1]
 
-            if target_match:
-                crown_jewels = [target_match.group(1)]
+            if target_val:
+                crown_jewels = [target_val]
             else:
                 crown_jewels = [n for n, d in self._memory_graph.nodes(data=True) if d.get("crown_jewel") is True]
                 if not crown_jewels:
-                    crown_jewels = [n for n in self._memory_graph.nodes if self._memory_graph.out_degree(n) == 0 and n not in entrypoints] or list(self._memory_graph.nodes)[-1:]
+                    crown_jewels = [n for n in self._memory_graph.nodes if self._memory_graph.out_degree(n) == 0 and n not in entrypoints] or list(self._memory_graph.nodes)[:1]
 
             # Active subgraph excluding quarantined nodes and severed edges
             active_subgraph = nx.DiGraph()
@@ -385,8 +398,11 @@ class FalkorDBClient:
         # 2. Multi-Hop variable length blast radius: MATCH path = (s {name: ...})-[*1..4]->(target)
         if "MATCH" in cypher_upper and ("*1.." in cypher or "*..4" in cypher or "*1..4" in cypher or "*1..3" in cypher or "*1..2" in cypher or "*1..1" in cypher or "*.." in cypher or "*1" in cypher):
             import re
-            m = re.search(r"name:\s*['\"]([^'\"]+)['\"]", cypher)
-            start_name = m.group(1) if m else (params.get("service") if params else None)
+            start_name = params.get("service") if params else None
+            if not start_name:
+                m = re.search(r"name:\s*(?:\$service|['\"]([^'\"]+)['\"])", cypher)
+                if m and m.group(1):
+                    start_name = m.group(1)
             if not start_name:
                 for node in self._memory_graph.nodes:
                     if node.lower() in cypher.lower():
@@ -441,8 +457,10 @@ class FalkorDBClient:
         # 3. SET service.status = 'QUARANTINED'
         if "SET" in cypher_upper and "QUARANTINED" in cypher_upper:
             import re
-            m = re.search(r"name:\s*['\"]([^'\"]+)['\"]", cypher)
-            node_name = m.group(1) if m else (params.get("service") if params else None)
+            node_name = params.get("service") if params else None
+            if not node_name:
+                m = re.search(r"name:\s*(?:\$service|['\"]([^'\"]+)['\"])", cypher)
+                node_name = m.group(1) if m and m.group(1) else None
             if node_name and node_name in self._memory_graph:
                 self._memory_graph.nodes[node_name]["status"] = "QUARANTINED"
                 return [[node_name, "QUARANTINED"]]
@@ -450,9 +468,17 @@ class FalkorDBClient:
         # 4. DELETE / Sever edge
         if "DELETE" in cypher_upper or ("SET" in cypher_upper and "SEVERED" in cypher_upper):
             import re
-            names = re.findall(r"name:\s*['\"]([^'\"]+)['\"]", cypher)
-            if len(names) >= 2:
-                from_node, to_node = names[0], names[1]
+            from_node = params.get("from_service") if params else None
+            to_node = params.get("to_target") if params else None
+            if not from_node:
+                names = re.findall(r"name:\s*(?:\$from_service|\$to_target|['\"]([^'\"]+)['\"])", cypher)
+                names = [n for n in names if n]
+                if len(names) >= 2:
+                    from_node, to_node = names[0], names[1]
+                elif len(names) == 1:
+                    from_node = names[0]
+
+            if from_node and to_node:
                 if self._memory_graph.has_edge(from_node, to_node):
                     edge_data = dict(self._memory_graph[from_node][to_node])
                     edge_data["status"] = "SEVERED"
@@ -464,8 +490,7 @@ class FalkorDBClient:
                     })
                     self._memory_graph.remove_edge(from_node, to_node)
                     return [[from_node, to_node]]
-            elif len(names) == 1:
-                from_node = names[0]
+            elif from_node:
                 if from_node in self._memory_graph:
                     rel_filter = None
                     m_rel = re.search(r"-\[r:([A-Z_|]+)\]->", cypher)
