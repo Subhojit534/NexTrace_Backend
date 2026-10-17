@@ -48,6 +48,10 @@ app = FastAPI(
     version="2.0.0"
 )
 
+# Vercel entrypoint compatibility aliases
+application = app
+handler = app
+
 # Enable CORS with restricted origin verification for local dev and Vercel frontend deployments
 cors_env = os.getenv("CORS_ALLOWED_ORIGINS", "")
 if cors_env.strip():
@@ -72,6 +76,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _sanitize_error_message(err: Any, password: Optional[str] = None) -> str:
+    """Redacts credentials, private keys, and server filesystem paths from error messages."""
+    msg = str(err)
+    msg = re.sub(r"://([^:@\s]+):([^@\s]+)@", r"://\1:******@", msg)
+    if password:
+        msg = msg.replace(str(password), "******")
+    msg = re.sub(r"gsk_[a-zA-Z0-9]{20,}", "gsk_******", msg)
+    msg = re.sub(r"AIzaSy[a-zA-Z0-9_-]{33}", "AIzaSy******", msg)
+    msg = re.sub(r"sk-[a-zA-Z0-9]{20,}", "sk-******", msg)
+    msg = re.sub(r"[a-zA-Z]:\\[^\s:;,]+", "[REDACTED_PATH]", msg)
+    msg = re.sub(r"/(?:Users|home|root|app|var|tmp)/[^\s:;,]+", "[REDACTED_PATH]", msg)
+    return msg[:200]
 
 
 @app.exception_handler(Exception)
@@ -115,20 +133,6 @@ class SessionClientCache:
 
 _session_clients = SessionClientCache()
 _client_cache: OrderedDict[tuple, FalkorDBClient] = OrderedDict()
-
-
-def _sanitize_error_message(err: Any, password: Optional[str] = None) -> str:
-    """Redacts credentials, private keys, and server filesystem paths from error messages."""
-    msg = str(err)
-    msg = re.sub(r"://([^:@\s]+):([^@\s]+)@", r"://\1:******@", msg)
-    if password:
-        msg = msg.replace(str(password), "******")
-    msg = re.sub(r"gsk_[a-zA-Z0-9]{20,}", "gsk_******", msg)
-    msg = re.sub(r"AIzaSy[a-zA-Z0-9_-]{33}", "AIzaSy******", msg)
-    msg = re.sub(r"sk-[a-zA-Z0-9]{20,}", "sk-******", msg)
-    msg = re.sub(r"[a-zA-Z]:\\[^\s:;,]+", "[REDACTED_PATH]", msg)
-    msg = re.sub(r"/(?:Users|home|root|app|var|tmp)/[^\s:;,]+", "[REDACTED_PATH]", msg)
-    return msg[:200]
 
 
 BLOCKED_SSRF_HOSTS = {
@@ -633,16 +637,15 @@ def chat_agent(
     and returns rich markdown with horizontal cyber kill-chain cards, explainable path proofs,
     blast radius statistics, and expandable Cypher/MCP execution logs.
     """
-    try:
-        falkor = req.falkordb or FalkorConfig()
-        client = get_client_from_request(
-            falkor_host=falkor.host or x_falkordb_host,
-            falkor_port=falkor.port or (int(x_falkordb_port) if x_falkordb_port else None),
-            falkor_user=falkor.username or x_falkordb_username,
-            falkor_pass=falkor.password or x_falkordb_password,
-            falkor_ssl=falkor.ssl if falkor.ssl is not None else ((x_falkordb_ssl.lower() == "true") if x_falkordb_ssl else False),
-            session_id=x_session_id,
-        )
+    falkor = req.falkordb or FalkorConfig()
+    client = get_client_from_request(
+        falkor_host=falkor.host or x_falkordb_host,
+        falkor_port=falkor.port or (int(x_falkordb_port) if x_falkordb_port else None),
+        falkor_user=falkor.username or x_falkordb_username,
+        falkor_pass=falkor.password or x_falkordb_password,
+        falkor_ssl=falkor.ssl if falkor.ssl is not None else ((x_falkordb_ssl.lower() == "true") if x_falkordb_ssl else False),
+        session_id=x_session_id,
+    )
 
     groq_key = req.groq_api_key or x_groq_api_key or os.getenv("GROQ_API_KEY", "")
     gemini_key = req.gemini_api_key or x_gemini_api_key or os.getenv("GEMINI_API_KEY", "")
@@ -1019,26 +1022,21 @@ I'm ready to investigate your cloud infrastructure.
 
 You can click any suggested scenario below, or upload your own cloud architecture JSON using the **`+`** button to begin."""
 
-        return {
-            "reply": reply_markdown,
-            "is_investigation": False,
-            "nodes_count": nodes_count,
-            "relationships_count": rels_count,
-            "entrypoints": entrypoints,
-            "crown_jewels": crown_jewels,
-            "suggested_followups": [
-                f"Simulate CVE-2024-3094 RCE on {entrypoints[0] if entrypoints else 'ingress'}",
-                "Find shortest path to crown jewel database",
-                "Calculate critical bottleneck chokepoints",
-                "Import a new JSON topology"
-            ],
-            "model_used": req.model or "llama-3.3-70b-versatile"
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Chat agent error: %s", _sanitize_error_message(e))
-        raise HTTPException(status_code=500, detail="Chat processing failed due to an internal error.")
+    return {
+        "reply": reply_markdown,
+        "is_investigation": False,
+        "nodes_count": nodes_count,
+        "relationships_count": rels_count,
+        "entrypoints": entrypoints,
+        "crown_jewels": crown_jewels,
+        "suggested_followups": [
+            f"Simulate CVE-2024-3094 RCE on {entrypoints[0] if entrypoints else 'ingress'}",
+            "Find shortest path to crown jewel database",
+            "Calculate critical bottleneck chokepoints",
+            "Import a new JSON topology"
+        ],
+        "model_used": req.model or "llama-3.3-70b-versatile"
+    }
 
 
 if __name__ == "__main__":
