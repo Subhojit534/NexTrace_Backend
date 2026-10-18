@@ -622,7 +622,8 @@ def run_investigation(
 def extract_target_node_from_text(text: Optional[str], graph_nodes: List[str]) -> Optional[str]:
     """
     Robust fuzzy and token-aware node extractor.
-    Resolves variations like 'Payment sevice', 'payment service', 'payment' -> 'paymentservice'.
+    Resolves variations like 'Payment sevice', 'payment service', 'payment' -> 'paymentservice',
+    'dev ec2', 'ec2' -> 'DevEC2Workload', 'credit card vault' -> 'CreditCardVault', etc.
     """
     if not text or not graph_nodes:
         return None
@@ -637,17 +638,26 @@ def extract_target_node_from_text(text: Optional[str], graph_nodes: List[str]) -
         if len(norm_n) >= 3 and (norm_n in joined_text or n.lower() in raw_lower):
             return n
 
-    # 2. Token match for distinctive prefixes (e.g. 'payment' in 'paymentservice', 'checkout' in 'checkoutservice')
-    generic_words = {"service", "server", "node", "app", "instance", "workload", "cluster", "cloud", "agent", "check", "fixed", "fixing", "test", "issue", "found"}
+    # 2. Multi-word pairs / triplets (e.g. 'dev ec2' -> 'devec2' in 'devec2workload', 'credit card' in 'creditcardvault')
+    candidates_multi = ["".join(pair) for pair in zip(words, words[1:])] + ["".join(tri) for tri in zip(words, words[1:], words[2:])]
+    for c in candidates_multi:
+        if len(c) >= 4:
+            for n in graph_nodes:
+                norm_n = re.sub(r"[^a-z0-9]", "", n.lower())
+                if c in norm_n:
+                    return n
+
+    # 3. Token match for distinctive prefixes or cloud identifiers (length >= 3, like 'ec2', 's3', 'rds', 'payment', 'cart')
+    generic_words = {"service", "server", "node", "app", "instance", "workload", "cluster", "cloud", "agent", "check", "fixed", "fixing", "test", "issue", "found", "and", "the", "for", "with", "from"}
     for w in words:
-        if w in generic_words or len(w) < 4:
+        if w in generic_words or len(w) < 3:
             continue
         for n in graph_nodes:
             norm_n = re.sub(r"[^a-z0-9]", "", n.lower())
             if w in norm_n:
                 return n
 
-    # 3. Fuzzy match for typos (e.g. 'sevice' or 'paymnt' -> 'paymentservice')
+    # 4. Fuzzy match for typos (e.g. 'sevice' or 'paymnt' -> 'paymentservice')
     candidates = words + ["".join(pair) for pair in zip(words, words[1:])]
     for c in candidates:
         if len(c) < 4:
