@@ -226,7 +226,7 @@ class GraphInvestigatorQueries:
         Mutates the graph state by updating node properties to 'QUARANTINED'.
         """
         cypher = (
-            "MATCH (s:Service {name: $service}) "
+            "MATCH (s {name: $service}) "
             "SET s.status = 'QUARANTINED', s.quarantine_reason = $reason, s.quarantined_at = timestamp() "
             "RETURN s.name AS name, s.status AS status"
         )
@@ -279,9 +279,9 @@ class GraphInvestigatorQueries:
 
         raw_results = self.client.query(cypher, params)
 
-        # If live FalkorDB was used, sync the memory mirror
-        if self.client.is_connected():
-            for edge_str in severed_edges:
+        # Sync the memory mirror unconditionally
+        for edge_str in severed_edges:
+            if " -> " in edge_str:
                 u, v = edge_str.split(" -> ")
                 if self.client._memory_graph.has_edge(u, v):
                     edge_data = dict(self.client._memory_graph[u][v])

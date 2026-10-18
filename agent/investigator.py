@@ -644,7 +644,10 @@ Please provide an easy-to-understand SecOps explanation in plain, everyday Engli
 3. Explain clearly what action was taken in FalkorDB to isolate the service and cut connections.
 4. Confirm why the system is 100% safe now (0 open paths remaining).
 """
-        ai_resp = self.generate_ai_response(user_prompt)
+        ai_resp = self.generate_ai_response(
+            user_prompt,
+            system_instruction="You are a clear, professional SecOps incident reporter. Summarize the incident in plain English for security leads and executives. Do not output JSON or tool calls."
+        )
         if ai_resp:
             return ai_resp
 
